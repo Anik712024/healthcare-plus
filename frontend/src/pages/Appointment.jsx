@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import '../styles/Appointment.css';
 
-const API = 'http://127.0.0.1:5000';
+const API = 'https://healthcare-plus-api.onrender.com';
 
 const DOCTORS = [
   { name: 'Dr. Sarah Ahmed',  spec: 'General Medicine', fee: 500,  icon: 'fa-solid fa-user-nurse' },

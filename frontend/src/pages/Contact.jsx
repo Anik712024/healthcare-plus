@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import '../styles/Contact.css';
 
-const API = 'http://127.0.0.1:5000';
+const API = 'https://healthcare-plus-api.onrender.com';
 
 export default function Contact() {
   const [form, setForm] = useState({

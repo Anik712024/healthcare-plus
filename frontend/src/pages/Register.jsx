@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../styles/Auth.css';
 
-const API = 'http://127.0.0.1:5000';
+const API = 'https://healthcare-plus-api.onrender.com';
 
 export default function Register() {
   const navigate = useNavigate();
