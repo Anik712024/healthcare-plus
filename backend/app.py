@@ -4,21 +4,21 @@ import re
 from datetime import datetime
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
-from functools import wraps
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DESKTOP = r"C:\Users\DELL\Desktop"
 
-DB_APPOINTMENT = os.path.join(BASE_DIR, "appointments.db")
-DB_CONTACT     = os.path.join(BASE_DIR, "contacts.db")
-DB_LOGIN       = os.path.join(BASE_DIR, "logins.db")
-DB_REGISTER    = os.path.join(BASE_DIR, "registrations.db")
+DB_APPOINTMENT = os.path.join(DESKTOP, "DoctorAppointment Information", "appointments.db")
+DB_CONTACT     = os.path.join(DESKTOP, "Contact Information",           "contacts.db")
+DB_LOGIN       = os.path.join(DESKTOP, "Login Information",             "logins.db")
+DB_REGISTER    = os.path.join(DESKTOP, "Register Information",          "registrations.db")
 
 app = Flask(__name__)
 app.secret_key = "healthcare_plus_secret_2026"
-
-CORS(app, supports_credentials=True, origins=["*"])
+CORS(app, supports_credentials=True, origins=["http://localhost:3000", "http://127.0.0.1:3000"])
 
 def get_db(db_path, create_sql):
+    folder = os.path.dirname(db_path)
+    os.makedirs(folder, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute(create_sql)
@@ -28,6 +28,7 @@ def get_db(db_path, create_sql):
 def valid_email(email):
     return bool(re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email))
 
+# ── APPOINTMENT ──
 CREATE_APPT = """
 CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,39 +43,37 @@ CREATE TABLE IF NOT EXISTS appointments (
     payment_method TEXT NOT NULL,
     total_fee TEXT,
     submitted_at TEXT NOT NULL
-)
-"""
+)"""
 
 @app.route("/api/appointment", methods=["POST"])
 def save_appointment():
     data = request.get_json(force=True)
-    required = ["full_name", "email", "phone", "preferred_date",
-                "preferred_time", "doctor", "payment_method"]
-    for field in required:
-        if not data.get(field, "").strip():
-            return jsonify({"ok": False, "error": f"Missing field: {field}"}), 400
+    required = ["full_name","email","phone","preferred_date","preferred_time","doctor","payment_method"]
+    for f in required:
+        if not data.get(f,"").strip():
+            return jsonify({"ok":False,"error":f"Missing field: {f}"}), 400
     if not valid_email(data["email"]):
-        return jsonify({"ok": False, "error": "Invalid email address."}), 400
+        return jsonify({"ok":False,"error":"Invalid email address."}), 400
     try:
         conn = get_db(DB_APPOINTMENT, CREATE_APPT)
         conn.execute("""
             INSERT INTO appointments
-            (full_name, email, phone, preferred_date, preferred_time,
-             gender, reason, doctor, payment_method, total_fee, submitted_at)
+            (full_name,email,phone,preferred_date,preferred_time,gender,reason,doctor,payment_method,total_fee,submitted_at)
             VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """, (
             data["full_name"].strip(), data["email"].strip(), data["phone"].strip(),
             data["preferred_date"].strip(), data["preferred_time"].strip(),
-            data.get("gender", "").strip(), data.get("reason", "").strip(),
+            data.get("gender","").strip(), data.get("reason","").strip(),
             data["doctor"].strip(), data["payment_method"].strip(),
-            data.get("total_fee", "").strip(),
+            data.get("total_fee","").strip(),
             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ))
         conn.commit(); conn.close()
-        return jsonify({"ok": True, "message": "Appointment saved successfully."})
+        return jsonify({"ok":True,"message":"Appointment saved successfully."})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok":False,"error":str(e)}), 500
 
+# ── CONTACT ──
 CREATE_CONTACT = """
 CREATE TABLE IF NOT EXISTS contacts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,43 +83,33 @@ CREATE TABLE IF NOT EXISTS contacts (
     subject TEXT,
     message TEXT NOT NULL,
     submitted_at TEXT NOT NULL
-)
-"""
+)"""
 
 @app.route("/api/contact", methods=["POST"])
 def save_contact():
     data = request.get_json(force=True)
-    for field in ["full_name", "email", "message"]:
-        if not data.get(field, "").strip():
-            return jsonify({"ok": False, "error": f"Missing field: {field}"}), 400
+    for f in ["full_name","email","message"]:
+        if not data.get(f,"").strip():
+            return jsonify({"ok":False,"error":f"Missing field: {f}"}), 400
     if not valid_email(data["email"]):
-        return jsonify({"ok": False, "error": "Invalid email address."}), 400
+        return jsonify({"ok":False,"error":"Invalid email address."}), 400
     try:
         conn = get_db(DB_CONTACT, CREATE_CONTACT)
         conn.execute("""
-            INSERT INTO contacts (full_name, email, phone, subject, message, submitted_at)
+            INSERT INTO contacts (full_name,email,phone,subject,message,submitted_at)
             VALUES (?,?,?,?,?,?)
         """, (
             data["full_name"].strip(), data["email"].strip(),
-            data.get("phone", "").strip(), data.get("subject", "").strip(),
+            data.get("phone","").strip(), data.get("subject","").strip(),
             data["message"].strip(), datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ))
         conn.commit(); conn.close()
-        return jsonify({"ok": True, "message": "Message sent successfully."})
+        return jsonify({"ok":True,"message":"Message sent successfully."})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok":False,"error":str(e)}), 500
 
-CREATE_LOGIN = """
-CREATE TABLE IF NOT EXISTS logins (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL,
-    remember_me INTEGER NOT NULL DEFAULT 0,
-    login_method TEXT NOT NULL DEFAULT 'email',
-    submitted_at TEXT NOT NULL
-)
-"""
-
-CREATE_REGISTER_TABLE = """
+# ── REGISTER ──
+CREATE_REGISTER = """
 CREATE TABLE IF NOT EXISTS registrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     first_name TEXT NOT NULL,
@@ -130,100 +119,104 @@ CREATE TABLE IF NOT EXISTS registrations (
     dob TEXT,
     password_hash TEXT NOT NULL,
     submitted_at TEXT NOT NULL
-)
-"""
+)"""
 
 def hash_password(password):
     import hashlib
     return hashlib.sha256(password.encode()).hexdigest()
 
-@app.route("/api/login", methods=["POST"])
-def login():
-    data = request.get_json(force=True)
-    email = data.get("email", "").strip()
-    password = data.get("password", "").strip()
-    remember = bool(data.get("remember_me", False))
-    method = data.get("method", "email")
-
-    if not email: return jsonify({"ok": False, "error": "Email is required."}), 400
-    if not valid_email(email): return jsonify({"ok": False, "error": "Invalid email address."}), 400
-
-    if method == "email":
-        if not password: return jsonify({"ok": False, "error": "Password is required."}), 400
-        try:
-            conn = get_db(DB_REGISTER, CREATE_REGISTER_TABLE)
-            row = conn.execute("SELECT * FROM registrations WHERE email = ?", (email,)).fetchone()
-            conn.close()
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
-        if row is None or row["password_hash"] != hash_password(password):
-            return jsonify({"ok": False, "error": "Invalid email or password."}), 401
-
-    try:
-        conn = get_db(DB_LOGIN, CREATE_LOGIN)
-        conn.execute("""
-            INSERT INTO logins (email, remember_me, login_method, submitted_at)
-            VALUES (?,?,?,?)
-        """, (email, int(remember), method, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit(); conn.close()
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-    session.permanent = remember
-    session["user_email"] = email
-    return jsonify({"ok": True, "message": f"Welcome, {email}!"})
-
-@app.route("/api/logout", methods=["POST"])
-def logout():
-    session.clear()
-    return jsonify({"ok": True})
-
-@app.route("/api/session")
-def check_session():
-    if "user_email" in session:
-        return jsonify({"ok": True, "email": session["user_email"]})
-    return jsonify({"ok": False})
-
 @app.route("/api/register", methods=["POST"])
 def register():
     data = request.get_json(force=True)
-    required = ["first_name", "last_name", "email", "password", "confirm_password"]
-    for field in required:
-        if not data.get(field, "").strip():
-            return jsonify({"ok": False, "error": f"Missing field: {field}"}), 400
+    for f in ["first_name","last_name","email","password","confirm_password"]:
+        if not data.get(f,"").strip():
+            return jsonify({"ok":False,"error":f"Missing field: {f}"}), 400
     if not valid_email(data["email"]):
-        return jsonify({"ok": False, "error": "Invalid email address."}), 400
+        return jsonify({"ok":False,"error":"Invalid email address."}), 400
     if data["password"] != data["confirm_password"]:
-        return jsonify({"ok": False, "error": "Confirm your selected password"}), 400
+        return jsonify({"ok":False,"error":"Confirm your selected password"}), 400
     if len(data["password"]) < 8:
-        return jsonify({"ok": False, "error": "Password must be at least 8 characters."}), 400
+        return jsonify({"ok":False,"error":"Password must be at least 8 characters."}), 400
     try:
-        conn = get_db(DB_REGISTER, CREATE_REGISTER_TABLE)
-        existing = conn.execute(
-            "SELECT id FROM registrations WHERE email = ?", (data["email"].strip(),)
-        ).fetchone()
+        conn = get_db(DB_REGISTER, CREATE_REGISTER)
+        existing = conn.execute("SELECT id FROM registrations WHERE email=?", (data["email"].strip(),)).fetchone()
         if existing:
             conn.close()
-            return jsonify({"ok": False, "error": "Email already registered."}), 409
+            return jsonify({"ok":False,"error":"Email already registered."}), 409
         conn.execute("""
-            INSERT INTO registrations
-            (first_name, last_name, email, phone, dob, password_hash, submitted_at)
+            INSERT INTO registrations (first_name,last_name,email,phone,dob,password_hash,submitted_at)
             VALUES (?,?,?,?,?,?,?)
         """, (
             data["first_name"].strip(), data["last_name"].strip(), data["email"].strip(),
-            data.get("phone", "").strip(), data.get("dob", "").strip(),
+            data.get("phone","").strip(), data.get("dob","").strip(),
             hash_password(data["password"]),
             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ))
         conn.commit(); conn.close()
-        return jsonify({"ok": True, "message": "Account created! You can now log in."})
+        return jsonify({"ok":True,"message":"Account created! You can now log in."})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok":False,"error":str(e)}), 500
+
+# ── LOGIN ──
+CREATE_LOGIN = """
+CREATE TABLE IF NOT EXISTS logins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    remember_me INTEGER NOT NULL DEFAULT 0,
+    login_method TEXT NOT NULL DEFAULT 'email',
+    submitted_at TEXT NOT NULL
+)"""
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    data = request.get_json(force=True)
+    email    = data.get("email","").strip()
+    password = data.get("password","").strip()
+    remember = bool(data.get("remember_me", False))
+    method   = data.get("method","email")
+
+    if not email: return jsonify({"ok":False,"error":"Email is required."}), 400
+    if not valid_email(email): return jsonify({"ok":False,"error":"Invalid email address."}), 400
+
+    if method == "email":
+        if not password: return jsonify({"ok":False,"error":"Password is required."}), 400
+        try:
+            conn = get_db(DB_REGISTER, CREATE_REGISTER)
+            row  = conn.execute("SELECT * FROM registrations WHERE email=?", (email,)).fetchone()
+            conn.close()
+        except Exception as e:
+            return jsonify({"ok":False,"error":str(e)}), 500
+        if row is None or row["password_hash"] != hash_password(password):
+            return jsonify({"ok":False,"error":"Invalid email and password."}), 401
+
+    try:
+        conn = get_db(DB_LOGIN, CREATE_LOGIN)
+        conn.execute("""
+            INSERT INTO logins (email,remember_me,login_method,submitted_at)
+            VALUES (?,?,?,?)
+        """, (email, int(remember), method, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit(); conn.close()
+    except Exception as e:
+        return jsonify({"ok":False,"error":str(e)}), 500
+
+    session.permanent = remember
+    session["user_email"] = email
+    return jsonify({"ok":True,"message":f"Welcome, {email}!"})
+
+@app.route("/api/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"ok":True})
+
+@app.route("/api/session")
+def check_session():
+    if "user_email" in session:
+        return jsonify({"ok":True,"email":session["user_email"]})
+    return jsonify({"ok":False})
 
 @app.route("/")
 def home():
-    return jsonify({"ok": True, "message": "HealthCare+ API is running!"})
+    return jsonify({"ok":True,"message":"HealthCare+ API running!"})
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(debug=False, host="0.0.0.0", port=port)
+    app.run(debug=True, port=5000)

@@ -3,6 +3,10 @@ import '../styles/Contact.css';
 
 const API = 'https://healthcare-plus-api.onrender.com';
 
+const copyToClipboard = (text) => {
+  navigator.clipboard.writeText(text).then(() => alert('Copied: ' + text));
+};
+
 export default function Contact() {
   const [form, setForm] = useState({
     full_name: '', email: '', phone: '', subject: '', message: ''
@@ -36,11 +40,12 @@ export default function Contact() {
     <>
       <section className="page-hero">
         <h1>Contact Us</h1>
-        <p>Have questions? We'd love to hear from you. Send us a message and we'll respond as soon as possible.</p>
+        <p>Have questions? We'd love to hear from you.</p>
       </section>
 
       <div className="contact-layout">
         <div className="contact-left">
+          {/* Contact Form */}
           <div className="contact-card">
             <div className="contact-card-title">Send us a Message</div>
             <div className="contact-form-grid">
@@ -49,11 +54,11 @@ export default function Contact() {
                 <input className="cf-input" name="full_name" value={form.full_name} onChange={handleChange} placeholder="Your full name" />
               </div>
               <div>
-                <label className="cf-label">Email <span>*</span></label>
+                <label className="cf-label">Email Address <span>*</span></label>
                 <input className="cf-input" name="email" type="email" value={form.email} onChange={handleChange} placeholder="your.email@example.com" />
               </div>
               <div>
-                <label className="cf-label">Phone</label>
+                <label className="cf-label">Phone Number</label>
                 <input className="cf-input" name="phone" type="tel" value={form.phone} onChange={handleChange} placeholder="+880 1234-567890" />
               </div>
               <div>
@@ -75,8 +80,24 @@ export default function Contact() {
               ✅ Message sent successfully! We'll get back to you soon.
             </div>
           </div>
+
+          {/* Google Map */}
+          <div className="contact-card">
+            <div className="contact-card-title">📍 Find Us on Map</div>
+            <div className="contact-map-wrap">
+              <iframe
+                width="100%"
+                height="300"
+                loading="lazy"
+                allowFullScreen
+                referrerPolicy="no-referrer-when-downgrade"
+                src="https://www.google.com/maps?q=Khulna+City+Medical+College+Hospital,+25+and+26+KDA+Ave,+Khulna+9100&output=embed"
+              />
+            </div>
+          </div>
         </div>
 
+        {/* Sidebar */}
         <div className="contact-sidebar">
           <div className="contact-card">
             <div className="info-item">
@@ -87,9 +108,21 @@ export default function Contact() {
               </div>
               <div className="info-body">
                 <h3>Phone</h3>
-                <p>+880 1234-567890</p>
+                <p
+                  className="clickable-contact"
+                  onClick={() => window.location.href = 'tel:+8801533362363'}
+                >
+                  +880 1533-362363
+                </p>
+                <p
+                  className="clickable-contact"
+                  onClick={() => window.location.href = 'tel:+8801234567890'}
+                >
+                  +880 1234-567890
+                </p>
               </div>
             </div>
+
             <div className="info-item">
               <div className="info-icon ii-green">
                 <svg width="18" height="18" fill="none" stroke="#22a779" strokeWidth="2" viewBox="0 0 24 24">
@@ -98,9 +131,15 @@ export default function Contact() {
               </div>
               <div className="info-body">
                 <h3>Email</h3>
-                <p>info@healthcareplus.com</p>
+                <p
+                  className="clickable-contact"
+                  onClick={() => copyToClipboard('info@healthcareplus.com')}
+                >
+                  info@healthcareplus.com
+                </p>
               </div>
             </div>
+
             <div className="info-item">
               <div className="info-icon ii-orange">
                 <svg width="18" height="18" fill="none" stroke="#e07a3a" strokeWidth="2" viewBox="0 0 24 24">
@@ -109,7 +148,19 @@ export default function Contact() {
               </div>
               <div className="info-body">
                 <h3>Address</h3>
-                <p>Khulna, Bangladesh</p>
+                <p>Khulna City Medical College Hospital,<br/>25 and 26 KDA Ave, Khulna 9100</p>
+              </div>
+            </div>
+
+            <div className="info-item">
+              <div className="info-icon ii-yellow">
+                <svg width="18" height="18" fill="none" stroke="#d4a017" strokeWidth="2" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <div className="info-body">
+                <h3>Working Hours</h3>
+                <p>Saturday – Thursday: 8AM – 8PM<br/>Friday: 2PM – 8PM</p>
               </div>
             </div>
           </div>
@@ -117,7 +168,10 @@ export default function Contact() {
           <div className="emergency-card-c">
             <h3>🚨 Emergency?</h3>
             <p>For medical emergencies, call our 24/7 emergency hotline immediately.</p>
-            <button className="btn-emergency" onClick={() => window.location.href='tel:+8801234567890'}>
+            <button
+              className="btn-emergency"
+              onClick={() => window.location.href = 'tel:+8801533362363'}
+            >
               📞 Call Emergency Line
             </button>
           </div>
