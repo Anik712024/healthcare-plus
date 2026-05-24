@@ -1,10 +1,3 @@
-"""
-HealthCare+ — Flask Backend
-Run:  python app.py
-Then open:  http://localhost:3000  (React dev server)
-           http://127.0.0.1:5000  (Flask only)
-"""
-
 import os
 import sqlite3
 import re
@@ -13,58 +6,42 @@ from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 from functools import wraps
 
-# ──────────────────────────────────────────────
-# CONFIG
-# ──────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DESKTOP  = r"C:\Users\DELL\Desktop"   # <-- your Windows desktop path
 
-DB_APPOINTMENT = os.path.join(DESKTOP, "DoctorAppointment Information", "appointments.db")
-DB_CONTACT     = os.path.join(DESKTOP, "Contact Information",           "contacts.db")
-DB_LOGIN       = os.path.join(DESKTOP, "Login Information",             "logins.db")
-DB_REGISTER    = os.path.join(DESKTOP, "Register Information",          "registrations.db")
+DB_APPOINTMENT = os.path.join(BASE_DIR, "appointments.db")
+DB_CONTACT     = os.path.join(BASE_DIR, "contacts.db")
+DB_LOGIN       = os.path.join(BASE_DIR, "logins.db")
+DB_REGISTER    = os.path.join(BASE_DIR, "registrations.db")
 
 app = Flask(__name__)
-app.secret_key = "healthcare_plus_secret_2026"  # change in production
+app.secret_key = "healthcare_plus_secret_2026"
 
-# Allow requests from React dev server
-CORS(app, supports_credentials=True, origins=["http://localhost:3000", "http://127.0.0.1:3000"])
+CORS(app, supports_credentials=True, origins=["*"])
 
-
-# ──────────────────────────────────────────────
-# HELPER — ensure DB folder + table exist
-# ──────────────────────────────────────────────
-def get_db(db_path: str, create_sql: str):
-    folder = os.path.dirname(db_path)
-    os.makedirs(folder, exist_ok=True)
+def get_db(db_path, create_sql):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute(create_sql)
     conn.commit()
     return conn
 
-
-def valid_email(email: str) -> bool:
+def valid_email(email):
     return bool(re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email))
 
-
-# ──────────────────────────────────────────────
-# 1. DOCTOR APPOINTMENT
-# ──────────────────────────────────────────────
 CREATE_APPT = """
 CREATE TABLE IF NOT EXISTS appointments (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    full_name      TEXT    NOT NULL,
-    email          TEXT    NOT NULL,
-    phone          TEXT    NOT NULL,
-    preferred_date TEXT    NOT NULL,
-    preferred_time TEXT    NOT NULL,
-    gender         TEXT,
-    reason         TEXT,
-    doctor         TEXT    NOT NULL,
-    payment_method TEXT    NOT NULL,
-    total_fee      TEXT,
-    submitted_at   TEXT    NOT NULL
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    preferred_date TEXT NOT NULL,
+    preferred_time TEXT NOT NULL,
+    gender TEXT,
+    reason TEXT,
+    doctor TEXT NOT NULL,
+    payment_method TEXT NOT NULL,
+    total_fee TEXT,
+    submitted_at TEXT NOT NULL
 )
 """
 
@@ -98,18 +75,14 @@ def save_appointment():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-
-# ──────────────────────────────────────────────
-# 2. CONTACT FORM
-# ──────────────────────────────────────────────
 CREATE_CONTACT = """
 CREATE TABLE IF NOT EXISTS contacts (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    full_name    TEXT NOT NULL,
-    email        TEXT NOT NULL,
-    phone        TEXT,
-    subject      TEXT,
-    message      TEXT NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT,
+    subject TEXT,
+    message TEXT NOT NULL,
     submitted_at TEXT NOT NULL
 )
 """
@@ -137,15 +110,11 @@ def save_contact():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-
-# ──────────────────────────────────────────────
-# 3. LOGIN
-# ──────────────────────────────────────────────
 CREATE_LOGIN = """
 CREATE TABLE IF NOT EXISTS logins (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    email        TEXT NOT NULL,
-    remember_me  INTEGER NOT NULL DEFAULT 0,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    remember_me INTEGER NOT NULL DEFAULT 0,
     login_method TEXT NOT NULL DEFAULT 'email',
     submitted_at TEXT NOT NULL
 )
@@ -153,38 +122,37 @@ CREATE TABLE IF NOT EXISTS logins (
 
 CREATE_REGISTER_TABLE = """
 CREATE TABLE IF NOT EXISTS registrations (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    first_name    TEXT NOT NULL,
-    last_name     TEXT NOT NULL,
-    email         TEXT NOT NULL UNIQUE,
-    phone         TEXT,
-    dob           TEXT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    phone TEXT,
+    dob TEXT,
     password_hash TEXT NOT NULL,
-    submitted_at  TEXT NOT NULL
+    submitted_at TEXT NOT NULL
 )
 """
 
-def hash_password(password: str) -> str:
+def hash_password(password):
     import hashlib
     return hashlib.sha256(password.encode()).hexdigest()
 
-
 @app.route("/api/login", methods=["POST"])
 def login():
-    data     = request.get_json(force=True)
-    email    = data.get("email", "").strip()
+    data = request.get_json(force=True)
+    email = data.get("email", "").strip()
     password = data.get("password", "").strip()
     remember = bool(data.get("remember_me", False))
-    method   = data.get("method", "email")
+    method = data.get("method", "email")
 
-    if not email:               return jsonify({"ok": False, "error": "Email is required."}), 400
-    if not valid_email(email):  return jsonify({"ok": False, "error": "Invalid email address."}), 400
+    if not email: return jsonify({"ok": False, "error": "Email is required."}), 400
+    if not valid_email(email): return jsonify({"ok": False, "error": "Invalid email address."}), 400
 
     if method == "email":
         if not password: return jsonify({"ok": False, "error": "Password is required."}), 400
         try:
             conn = get_db(DB_REGISTER, CREATE_REGISTER_TABLE)
-            row  = conn.execute("SELECT * FROM registrations WHERE email = ?", (email,)).fetchone()
+            row = conn.execute("SELECT * FROM registrations WHERE email = ?", (email,)).fetchone()
             conn.close()
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
@@ -201,16 +169,14 @@ def login():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-    session.permanent    = remember
+    session.permanent = remember
     session["user_email"] = email
     return jsonify({"ok": True, "message": f"Welcome, {email}!"})
-
 
 @app.route("/api/logout", methods=["POST"])
 def logout():
     session.clear()
     return jsonify({"ok": True})
-
 
 @app.route("/api/session")
 def check_session():
@@ -218,10 +184,6 @@ def check_session():
         return jsonify({"ok": True, "email": session["user_email"]})
     return jsonify({"ok": False})
 
-
-# ──────────────────────────────────────────────
-# 4. REGISTER
-# ──────────────────────────────────────────────
 @app.route("/api/register", methods=["POST"])
 def register():
     data = request.get_json(force=True)
@@ -236,7 +198,7 @@ def register():
     if len(data["password"]) < 8:
         return jsonify({"ok": False, "error": "Password must be at least 8 characters."}), 400
     try:
-        conn     = get_db(DB_REGISTER, CREATE_REGISTER_TABLE)
+        conn = get_db(DB_REGISTER, CREATE_REGISTER_TABLE)
         existing = conn.execute(
             "SELECT id FROM registrations WHERE email = ?", (data["email"].strip(),)
         ).fetchone()
@@ -258,14 +220,10 @@ def register():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/")
+def home():
+    return jsonify({"ok": True, "message": "HealthCare+ API is running!"})
 
-# ──────────────────────────────────────────────
-# RUN
-# ──────────────────────────────────────────────
 if __name__ == "__main__":
-    print("=" * 50)
-    print("  HealthCare+ Backend running!")
-    print("  API: http://127.0.0.1:5000")
-    print("  Open React app: http://localhost:3000")
-    print("=" * 50)
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host="0.0.0.0", port=port)
