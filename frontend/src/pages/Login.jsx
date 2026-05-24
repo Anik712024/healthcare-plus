@@ -1,50 +1,142 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../styles/Auth.css';
 
 const API = 'https://healthcare-plus-api.onrender.com';
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function Login() {
   const navigate = useNavigate();
 
-  const [email,     setEmail]     = useState('');
-  const [password,  setPassword]  = useState('');
-  const [remember,  setRemember]  = useState(false);
-  const [showPwd,   setShowPwd]   = useState(false);
-  const [error,     setError]     = useState('');
+  const [email,    setEmail]    = useState('');
+  const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false);
+  const [showPwd,  setShowPwd]  = useState(false);
+  const [error,    setError]    = useState('');
+  const [loading,  setLoading]  = useState(false);
 
+  /* Pre-fill email if the user previously chose "Remember me" */
+  useEffect(() => {
+    const saved = localStorage.getItem('hc_remembered_email');
+    if (saved) {
+      setEmail(saved);
+      setRemember(true);
+    }
+  }, []);
+
+  /* ── Email / password login ── */
   const handleLogin = async () => {
     setError('');
-    if (!email || !password) { setError('Please fill in both fields.'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Invalid email address.'); return; }
 
-    try {
-      const res  = await fetch(`${API}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, remember_me: remember, method: 'email' }),
-      });
-      const data = await res.json();
-      if (!data.ok) { setError('Invalid email and password.'); return; }
-    } catch {
-      setError('Unable to connect to server.');
+    // Client-side validation first (mirrors Chrome's built-in checks)
+    if (!email || !password) {
+      setError('Please fill in both fields.');
+      return;
+    }
+    if (!EMAIL_RE.test(email)) {
+      setError('Invalid email address.');
       return;
     }
 
-    if (remember) localStorage.setItem('hc_user', email);
-    navigate('/');
+    setLoading(true);
+    try {
+      const res  = await fetch(`${API}/api/login`, {
+        method:      'POST',
+        credentials: 'include',          // send / receive session cookie
+        headers:     { 'Content-Type': 'application/json' },
+        body:        JSON.stringify({
+          email,
+          password,
+          remember_me: remember,
+          method:      'email',
+        }),
+      });
+      const data = await res.json();
+
+      if (!data.ok) {
+        // Server says credentials are wrong
+        setError('Invalid email and password.');
+        return;
+      }
+
+      // ── Remember-me: persist email in localStorage ──
+      if (remember) {
+        localStorage.setItem('hc_remembered_email', email);
+      } else {
+        localStorage.removeItem('hc_remembered_email');
+      }
+
+      navigate('/');
+    } catch {
+      setError('Unable to connect to server. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  /* ── Social login ──
+     On Android / desktop Chrome the browser exposes the user's saved Google /
+     Facebook accounts via the Credential Management API.  We use that to let
+     the user pick an account, then send the selected email to the backend.
+     Falls back to a prompt() on browsers that don't support it.
+  */
   const socialLogin = async (provider) => {
-    const socialEmail = prompt(`Enter your ${provider} account email:`);
-    if (!socialEmail) return;
+    setError('');
+    let chosenEmail = null;
+
+    // Try the Credential Management API (works in Chrome on Android)
+    if (window.PasswordCredential || window.FederatedCredential) {
+      try {
+        const cred = await navigator.credentials.get({
+          federated: {
+            providers: [
+              provider === 'Google'
+                ? 'https://accounts.google.com'
+                : 'https://www.facebook.com',
+            ],
+          },
+          // mediation: 'optional' shows the account chooser if multiple saved
+          mediation: 'optional',
+        });
+        if (cred) chosenEmail = cred.id;
+      } catch {
+        /* Browser blocked or user dismissed — fall through to prompt */
+      }
+    }
+
+    // Fallback: manual entry
+    if (!chosenEmail) {
+      chosenEmail = window.prompt(
+        `Enter your ${provider} account email address:`
+      );
+    }
+
+    if (!chosenEmail) return;  // user cancelled
+
+    if (!EMAIL_RE.test(chosenEmail)) {
+      setError('Invalid email address.');
+      return;
+    }
+
+    setLoading(true);
     try {
       await fetch(`${API}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: socialEmail, method: provider.toLowerCase(), remember_me: false }),
+        method:      'POST',
+        credentials: 'include',
+        headers:     { 'Content-Type': 'application/json' },
+        body:        JSON.stringify({
+          email:       chosenEmail,
+          method:      provider.toLowerCase(),
+          remember_me: false,
+        }),
       });
-    } catch {}
+    } catch {
+      /* Backend down — navigate anyway so UX is not blocked during dev */
+    } finally {
+      setLoading(false);
+    }
+
     navigate('/');
   };
 
@@ -76,7 +168,7 @@ export default function Login() {
               placeholder="your.email@example.com"
               autoComplete="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => { setEmail(e.target.value); setError(''); }}
             />
           </div>
 
@@ -87,8 +179,9 @@ export default function Login() {
               id="login-password"
               type={showPwd ? 'text' : 'password'}
               placeholder="Enter your password"
+              autoComplete="current-password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={e => { setPassword(e.target.value); setError(''); }}
               onKeyDown={e => e.key === 'Enter' && handleLogin()}
             />
             <button className="eye-btn" type="button" onClick={() => setShowPwd(p => !p)}>
@@ -109,21 +202,34 @@ export default function Login() {
 
           <div className="row-check">
             <label className="check-label">
-              <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={e => setRemember(e.target.checked)}
+              />
               Remember me
             </label>
             <a href="#" className="forgot">Forgot password?</a>
           </div>
 
+          {/* Error message shown for invalid credentials */}
           {error && <p className="login-error">{error}</p>}
 
-          <button className="btn-auth-submit" onClick={handleLogin}>
-            <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
-              <polyline points="10 17 15 12 10 7"/>
-              <line x1="15" y1="12" x2="3" y2="12"/>
-            </svg>
-            Login
+          <button
+            className="btn-auth-submit"
+            onClick={handleLogin}
+            disabled={loading}
+          >
+            {loading ? 'Logging in…' : (
+              <>
+                <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                  <polyline points="10 17 15 12 10 7"/>
+                  <line x1="15" y1="12" x2="3" y2="12"/>
+                </svg>
+                Login
+              </>
+            )}
           </button>
 
           <div className="divider">Or continue with</div>

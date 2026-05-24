@@ -3,6 +3,7 @@ import '../styles/Contact.css';
 
 const API = 'https://healthcare-plus-api.onrender.com';
 
+/* Copy text to clipboard and show a brief alert */
 const copyToClipboard = (text) => {
   navigator.clipboard.writeText(text).then(() => alert('Copied: ' + text));
 };
@@ -81,8 +82,8 @@ export default function Contact() {
             </div>
           </div>
 
-          {/* Google Map */}
-          <div className="contact-card">
+          {/* Google Map — id="map-section" so footer location link can scroll here */}
+          <div className="contact-card" id="map-section">
             <div className="contact-card-title">📍 Find Us on Map</div>
             <div className="contact-map-wrap">
               <iframe
@@ -100,6 +101,8 @@ export default function Contact() {
         {/* Sidebar */}
         <div className="contact-sidebar">
           <div className="contact-card">
+
+            {/* Phone — clicking opens dialer with number pre-filled */}
             <div className="info-item">
               <div className="info-icon ii-blue">
                 <svg width="18" height="18" fill="none" stroke="#2563eb" strokeWidth="2" viewBox="0 0 24 24">
@@ -108,21 +111,27 @@ export default function Contact() {
               </div>
               <div className="info-body">
                 <h3>Phone</h3>
-                <p
-                  className="clickable-contact"
-                  onClick={() => window.location.href = 'tel:+8801533362363'}
-                >
-                  +880 1533-362363
+                {/* Using <a href="tel:..."> so Android opens the dialer with the number ready */}
+                <p>
+                  <a
+                    className="clickable-contact"
+                    href="tel:+8801533362363"
+                  >
+                    +880 1533-362363
+                  </a>
                 </p>
-                <p
-                  className="clickable-contact"
-                  onClick={() => window.location.href = 'tel:+8801234567890'}
-                >
-                  +880 1234-567890
+                <p>
+                  <a
+                    className="clickable-contact"
+                    href="tel:+8801234567890"
+                  >
+                    +880 1234-567890
+                  </a>
                 </p>
               </div>
             </div>
 
+            {/* Email — clicking copies email to clipboard */}
             <div className="info-item">
               <div className="info-icon ii-green">
                 <svg width="18" height="18" fill="none" stroke="#22a779" strokeWidth="2" viewBox="0 0 24 24">
@@ -134,6 +143,8 @@ export default function Contact() {
                 <p
                   className="clickable-contact"
                   onClick={() => copyToClipboard('info@healthcareplus.com')}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to copy"
                 >
                   info@healthcareplus.com
                 </p>
@@ -165,15 +176,17 @@ export default function Contact() {
             </div>
           </div>
 
+          {/* Emergency card — clicking calls the emergency number */}
           <div className="emergency-card-c">
             <h3>🚨 Emergency?</h3>
             <p>For medical emergencies, call our 24/7 emergency hotline immediately.</p>
-            <button
+            {/* <a href="tel:..."> opens the dialer on Android/iOS instantly */}
+            <a
               className="btn-emergency"
-              onClick={() => window.location.href = 'tel:+8801533362363'}
+              href="tel:+8801533362363"
             >
               📞 Call Emergency Line
-            </button>
+            </a>
           </div>
         </div>
       </div>
