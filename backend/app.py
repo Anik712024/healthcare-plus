@@ -1,14 +1,17 @@
-
 """
-HealthCare+ — Flask Backend
-Endpoints consumed by the React frontend:
+HealthCare+ — Flask Backend  (fixed for Render deployment)
+Endpoints:
+  GET  /api/health
   POST /api/register
   POST /api/login
+  POST /api/logout
+  GET  /api/me
   POST /api/appointment
   POST /api/contact
-  GET  /api/health
+  GET  /api/admin/appointments
+  GET  /api/admin/contacts
 """
- 
+
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -16,38 +19,42 @@ import re
 import sqlite3
 import os
 from datetime import timedelta
- 
-# ── App setup ────────────────────────────────────────────────────────────────
- 
+
+# ── App setup ─────────────────────────────────────────────────────────────────
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "healthcare-plus-secret-2026")
 app.permanent_session_lifetime = timedelta(days=30)
- 
-# Allow requests from the Vite dev server (port 3000) and any deployed origin
-CORS(app, supports_credentials=True, origins=[
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-])
- 
-DB_PATH = os.path.join(os.path.dirname(__file__), "healthcare.db")
- 
- 
+
+# ── CORS — allow ALL origins (covers Vercel, localhost, WebView/APK) ──────────
+# If you want to restrict later, set the ALLOWED_ORIGIN env-var in Render
+# to your exact Vercel URL e.g. https://healthcare-plus.vercel.app
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
+
+CORS(
+    app,
+    supports_credentials=(ALLOWED_ORIGIN != "*"),
+    origins=ALLOWED_ORIGIN,
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "OPTIONS"],
+)
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "healthcare.db")
+
+
 # ── Database helpers ──────────────────────────────────────────────────────────
- 
+
 def get_db():
-    """Return a thread-local SQLite connection with dict-style rows."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
- 
- 
+
+
 def init_db():
-    """Create tables if they don't exist."""
+    """Create tables once on startup."""
     conn = get_db()
-    cur = conn.cursor()
- 
+    cur  = conn.cursor()
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,7 +67,7 @@ def init_db():
             created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
- 
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS appointments (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +84,7 @@ def init_db():
             created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
- 
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS contacts (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,46 +96,53 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
- 
+
     conn.commit()
     conn.close()
- 
- 
-# ── Validation helpers ────────────────────────────────────────────────────────
- 
+
+
+# ── Call init_db() at module level so Render (Gunicorn) creates tables ────────
+init_db()
+
+
+# ── Validation ────────────────────────────────────────────────────────────────
+
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
- 
+
 def valid_email(email: str) -> bool:
     return bool(EMAIL_RE.match(email))
- 
- 
+
+
+# ── CORS preflight helper (OPTIONS) ──────────────────────────────────────────
+
+@app.before_request
+def handle_options():
+    if request.method == "OPTIONS":
+        return _cors_response(jsonify({}), 200)
+
+
+def _cors_response(response, status=200):
+    origin = request.headers.get("Origin", "*")
+    response.headers["Access-Control-Allow-Origin"]      = origin if ALLOWED_ORIGIN == "*" else ALLOWED_ORIGIN
+    response.headers["Access-Control-Allow-Headers"]     = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"]     = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Credentials"] = "true" if ALLOWED_ORIGIN != "*" else "false"
+    return response, status
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
- 
+
 @app.route("/api/health", methods=["GET"])
 def health():
-    """Simple heartbeat — frontend can use this to check if backend is up."""
     return jsonify({"ok": True, "service": "HealthCare+ API", "version": "1.0.0"})
- 
- 
-# ── Registration ──────────────────────────────────────────────────────────────
- 
-@app.route("/api/register", methods=["POST"])
+
+
+# ── Register ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/register", methods=["POST", "OPTIONS"])
 def register():
-    """
-    Expected JSON body:
-    {
-      first_name, last_name, email, phone, dob, password, confirm_password
-    }
- 
-    Validations (mirrors the frontend):
-      • All required fields present
-      • Valid email format
-      • password == confirm_password
-      • Password length >= 8
-      • Email not already taken
-    """
     data = request.get_json(force=True, silent=True) or {}
- 
+
     first_name       = (data.get("first_name")       or "").strip()
     last_name        = (data.get("last_name")        or "").strip()
     email            = (data.get("email")            or "").strip().lower()
@@ -136,34 +150,24 @@ def register():
     dob              = (data.get("dob")              or "").strip()
     password         = (data.get("password")         or "")
     confirm_password = (data.get("confirm_password") or "")
- 
-    # ── Required field check ──
+
     if not all([first_name, last_name, email, password, confirm_password]):
         return jsonify({"ok": False, "error": "Please fill in all required fields."}), 400
- 
-    # ── Email format ──
     if not valid_email(email):
         return jsonify({"ok": False, "error": "Please enter a valid email address."}), 400
- 
-    # ── Password match ──
     if password != confirm_password:
-        return jsonify({"ok": False, "error": "Confirm your selected password"}), 400
- 
-    # ── Password length ──
+        return jsonify({"ok": False, "error": "Passwords do not match."}), 400
     if len(password) < 8:
         return jsonify({"ok": False, "error": "Password must be at least 8 characters."}), 400
- 
-    # ── Duplicate email ──
+
     conn = get_db()
     try:
         existing = conn.execute(
             "SELECT id FROM users WHERE email = ?", (email,)
         ).fetchone()
- 
         if existing:
             return jsonify({"ok": False, "error": "An account with this email already exists."}), 409
- 
-        # ── Insert ──
+
         conn.execute(
             """INSERT INTO users (first_name, last_name, email, phone, dob, password_hash)
                VALUES (?, ?, ?, ?, ?, ?)""",
@@ -173,55 +177,46 @@ def register():
         conn.commit()
     finally:
         conn.close()
- 
+
     return jsonify({"ok": True, "message": "Account created successfully! You can now log in."})
- 
- 
+
+
 # ── Login ─────────────────────────────────────────────────────────────────────
- 
-@app.route("/api/login", methods=["POST"])
+
+@app.route("/api/login", methods=["POST", "OPTIONS"])
 def login():
     """
-    Expected JSON body:
-    {
-      email, password, remember_me (bool), method ("email" | "google" | "facebook")
-    }
- 
-    • method == "email"  → validate email + password against DB
-    • method == "google" / "facebook" → social-login flow
-      (In production you would verify the OAuth token here.
-       For now we create the user if not present and log them in.)
+    method = "email"    → validate against DB
+    method = "google"   → social (no real OAuth; auto-create user)
+    method = "facebook" → same
     """
     data = request.get_json(force=True, silent=True) or {}
- 
-    email       = (data.get("email")  or "").strip().lower()
+
+    email       = (data.get("email")    or "").strip().lower()
     password    = (data.get("password") or "")
     remember_me = bool(data.get("remember_me", False))
-    method      = (data.get("method") or "email").lower()
- 
-    # ── Basic email check ──
+    method      = (data.get("method")   or "email").lower()
+
     if not email or not valid_email(email):
         return jsonify({"ok": False, "error": "Invalid email address."}), 400
- 
+
     conn = get_db()
     try:
         if method == "email":
             if not password:
                 return jsonify({"ok": False, "error": "Please fill in both fields."}), 400
- 
+
             user = conn.execute(
                 "SELECT * FROM users WHERE email = ?", (email,)
             ).fetchone()
- 
-            # Wrong email or wrong password — same generic message for security
+
             if not user or not check_password_hash(user["password_hash"], password):
-                return jsonify({"ok": False, "error": "Invalid email and password."}), 401
- 
-            # ── Session ──
-            session.permanent = remember_me
-            session["user_id"]    = user["id"]
-            session["user_email"] = email
- 
+                return jsonify({"ok": False, "error": "Invalid email or password."}), 401
+
+            session.permanent      = remember_me
+            session["user_id"]     = user["id"]
+            session["user_email"]  = email
+
             return jsonify({
                 "ok":   True,
                 "user": {
@@ -231,15 +226,13 @@ def login():
                     "email":      user["email"],
                 }
             })
- 
+
         else:
-            # ── Social login (Google / Facebook) ──
-            # In a real app: verify the OAuth access-token / ID-token here.
-            # For this demo we auto-create the user if not found.
+            # Social login — auto-create account if first time
             user = conn.execute(
                 "SELECT * FROM users WHERE email = ?", (email,)
             ).fetchone()
- 
+
             if not user:
                 conn.execute(
                     """INSERT INTO users (first_name, last_name, email, phone, dob, password_hash)
@@ -251,40 +244,36 @@ def login():
                 user = conn.execute(
                     "SELECT * FROM users WHERE email = ?", (email,)
                 ).fetchone()
- 
-            session.permanent = remember_me
+
+            session.permanent     = remember_me
             session["user_id"]    = user["id"]
             session["user_email"] = email
- 
+
             return jsonify({
                 "ok":     True,
                 "method": method,
-                "user": {
-                    "id":    user["id"],
-                    "email": user["email"],
-                }
+                "user":   {"id": user["id"], "email": user["email"]}
             })
     finally:
         conn.close()
- 
- 
+
+
 # ── Logout ────────────────────────────────────────────────────────────────────
- 
-@app.route("/api/logout", methods=["POST"])
+
+@app.route("/api/logout", methods=["POST", "OPTIONS"])
 def logout():
     session.clear()
     return jsonify({"ok": True})
- 
- 
-# ── Current session user ──────────────────────────────────────────────────────
- 
+
+
+# ── Current user ──────────────────────────────────────────────────────────────
+
 @app.route("/api/me", methods=["GET"])
 def me():
-    """Returns the logged-in user's profile, or 401 if not logged in."""
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"ok": False, "error": "Not logged in."}), 401
- 
+
     conn = get_db()
     try:
         user = conn.execute(
@@ -293,31 +282,20 @@ def me():
         ).fetchone()
     finally:
         conn.close()
- 
+
     if not user:
         session.clear()
         return jsonify({"ok": False, "error": "User not found."}), 404
- 
-    return jsonify({
-        "ok":   True,
-        "user": dict(user)
-    })
- 
- 
-# ── Appointment booking ───────────────────────────────────────────────────────
- 
-@app.route("/api/appointment", methods=["POST"])
+
+    return jsonify({"ok": True, "user": dict(user)})
+
+
+# ── Appointment ───────────────────────────────────────────────────────────────
+
+@app.route("/api/appointment", methods=["POST", "OPTIONS"])
 def appointment():
-    """
-    Expected JSON body:
-    {
-      full_name, email, phone, preferred_date, preferred_time,
-      gender (optional), reason (optional),
-      doctor, payment_method, total_fee
-    }
-    """
     data = request.get_json(force=True, silent=True) or {}
- 
+
     full_name      = (data.get("full_name")      or "").strip()
     email          = (data.get("email")          or "").strip().lower()
     phone          = (data.get("phone")          or "").strip()
@@ -328,14 +306,12 @@ def appointment():
     doctor         = (data.get("doctor")         or "").strip()
     payment_method = (data.get("payment_method") or "").strip()
     total_fee      = (data.get("total_fee")      or "").strip()
- 
-    # ── Required fields ──
+
     if not all([full_name, email, phone, preferred_date, preferred_time, doctor, payment_method]):
         return jsonify({"ok": False, "error": "Please fill in all required fields."}), 400
- 
     if not valid_email(email):
         return jsonify({"ok": False, "error": "Invalid email address."}), 400
- 
+
     conn = get_db()
     try:
         conn.execute(
@@ -349,37 +325,30 @@ def appointment():
         conn.commit()
     finally:
         conn.close()
- 
+
     return jsonify({
         "ok":      True,
         "message": f"Appointment booked with {doctor} on {preferred_date} at {preferred_time}."
     })
- 
- 
-# ── Contact form ──────────────────────────────────────────────────────────────
- 
-@app.route("/api/contact", methods=["POST"])
+
+
+# ── Contact ───────────────────────────────────────────────────────────────────
+
+@app.route("/api/contact", methods=["POST", "OPTIONS"])
 def contact():
-    """
-    Expected JSON body:
-    {
-      full_name, email, phone (optional), subject (optional), message
-    }
-    """
     data = request.get_json(force=True, silent=True) or {}
- 
+
     full_name = (data.get("full_name") or "").strip()
     email     = (data.get("email")     or "").strip().lower()
     phone     = (data.get("phone")     or "").strip()
     subject   = (data.get("subject")   or "").strip()
     message   = (data.get("message")   or "").strip()
- 
+
     if not all([full_name, email, message]):
         return jsonify({"ok": False, "error": "Please fill in required fields."}), 400
- 
     if not valid_email(email):
         return jsonify({"ok": False, "error": "Invalid email address."}), 400
- 
+
     conn = get_db()
     try:
         conn.execute(
@@ -390,12 +359,12 @@ def contact():
         conn.commit()
     finally:
         conn.close()
- 
+
     return jsonify({"ok": True, "message": "Message received. We'll get back to you soon!"})
- 
- 
-# ── Admin: list submissions (simple, no auth for demo) ───────────────────────
- 
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
 @app.route("/api/admin/appointments", methods=["GET"])
 def admin_appointments():
     conn = get_db()
@@ -406,8 +375,8 @@ def admin_appointments():
     finally:
         conn.close()
     return jsonify({"ok": True, "appointments": [dict(r) for r in rows]})
- 
- 
+
+
 @app.route("/api/admin/contacts", methods=["GET"])
 def admin_contacts():
     conn = get_db()
@@ -418,26 +387,25 @@ def admin_contacts():
     finally:
         conn.close()
     return jsonify({"ok": True, "contacts": [dict(r) for r in rows]})
- 
- 
+
+
 # ── Error handlers ────────────────────────────────────────────────────────────
- 
+
 @app.errorhandler(404)
 def not_found(_):
     return jsonify({"ok": False, "error": "Endpoint not found."}), 404
- 
+
 @app.errorhandler(405)
 def method_not_allowed(_):
     return jsonify({"ok": False, "error": "Method not allowed."}), 405
- 
+
 @app.errorhandler(500)
 def internal_error(e):
     return jsonify({"ok": False, "error": "Internal server error.", "detail": str(e)}), 500
- 
- 
-# ── Entry point ───────────────────────────────────────────────────────────────
- 
+
+
+# ── Entry point (local dev only; Render uses Gunicorn) ───────────────────────
+
 if __name__ == "__main__":
-    init_db()
-    print("✅  HealthCare+ API running at https://healthcare-plus-api.onrender.com")
+    print("✅  HealthCare+ API — local dev mode")
     app.run(host="0.0.0.0", port=5000, debug=True)

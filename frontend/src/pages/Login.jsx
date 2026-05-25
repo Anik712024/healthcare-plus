@@ -15,11 +15,19 @@ export default function Login() {
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
 
+  // Social login modal state
+  const [socialModal,       setSocialModal]       = useState(false);
+  const [socialProvider,    setSocialProvider]    = useState('');
+  const [socialEmail,       setSocialEmail]       = useState('');
+  const [socialEmailError,  setSocialEmailError]  = useState('');
+  const [socialLoading,     setSocialLoading]     = useState(false);
+
   useEffect(() => {
     const saved = localStorage.getItem('hc_remembered_email');
     if (saved) { setEmail(saved); setRemember(true); }
   }, []);
 
+  // ── Email / password login ──────────────────────────────────────────────────
   const handleLogin = async () => {
     setError('');
     if (!email || !password) { setError('Please fill in both fields.'); return; }
@@ -28,14 +36,14 @@ export default function Login() {
     setLoading(true);
     try {
       const res  = await fetch(`${API}/api/login`, {
-        method: 'POST', credentials: 'include',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, remember_me: remember, method: 'email' }),
       });
       const data = await res.json();
-      if (!data.ok) { setError('Invalid email and password.'); return; }
+      if (!data.ok) { setError('Invalid email or password.'); return; }
       if (remember) localStorage.setItem('hc_remembered_email', email);
-      else localStorage.removeItem('hc_remembered_email');
+      else          localStorage.removeItem('hc_remembered_email');
       navigate('/');
     } catch {
       setError('Unable to connect to server. Please try again.');
@@ -44,21 +52,107 @@ export default function Login() {
     }
   };
 
-  const socialLogin = async (provider) => {
-    const chosenEmail = window.prompt(`Enter your ${provider} account email:`);
-    if (!chosenEmail) return;
+  // ── Open social modal ───────────────────────────────────────────────────────
+  const openSocialModal = (provider) => {
+    setSocialProvider(provider);
+    setSocialEmail('');
+    setSocialEmailError('');
+    setSocialModal(true);
+  };
+
+  // ── Confirm social login ────────────────────────────────────────────────────
+  const confirmSocialLogin = async () => {
+    setSocialEmailError('');
+    if (!socialEmail.trim()) { setSocialEmailError('Please enter your email.'); return; }
+    if (!EMAIL_RE.test(socialEmail.trim())) { setSocialEmailError('Invalid email address.'); return; }
+
+    setSocialLoading(true);
     try {
-      await fetch(`${API}/api/login`, {
-        method: 'POST', credentials: 'include',
+      const res  = await fetch(`${API}/api/login`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: chosenEmail, method: provider.toLowerCase(), remember_me: false }),
+        body: JSON.stringify({
+          email:       socialEmail.trim().toLowerCase(),
+          method:      socialProvider.toLowerCase(),
+          remember_me: false,
+        }),
       });
-    } catch {}
-    navigate('/');
+      const data = await res.json();
+      if (data.ok) {
+        setSocialModal(false);
+        navigate('/');
+      } else {
+        setSocialEmailError(data.error || 'Login failed. Please try again.');
+      }
+    } catch {
+      setSocialEmailError('Unable to connect to server. Please try again.');
+    } finally {
+      setSocialLoading(false);
+    }
   };
 
   return (
     <div className="auth-page">
+
+      {/* ── Social login modal (replaces window.prompt — works in WebView) ── */}
+      {socialModal && (
+        <div className="social-modal-overlay" onClick={() => setSocialModal(false)}>
+          <div className="social-modal-box" onClick={e => e.stopPropagation()}>
+            <div className="social-modal-title">
+              Continue with {socialProvider}
+            </div>
+            <p className="social-modal-sub">
+              Enter the email linked to your {socialProvider} account.
+            </p>
+            <div className={`auth-input-wrap-new ${socialEmailError ? 'wrap-error' : ''}`} style={{ marginBottom: 8 }}>
+              <svg className="field-icon" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <rect x="2" y="4" width="20" height="16" rx="3"/><polyline points="2,4 12,13 22,4"/>
+              </svg>
+              <input
+                type="email"
+                placeholder="your.email@example.com"
+                autoComplete="email"
+                value={socialEmail}
+                onChange={e => { setSocialEmail(e.target.value); setSocialEmailError(''); }}
+                onKeyDown={e => e.key === 'Enter' && confirmSocialLogin()}
+                autoFocus
+              />
+            </div>
+            {socialEmailError && (
+              <span className="field-err-msg" style={{ marginBottom: 12, display: 'block' }}>
+                {socialEmailError}
+              </span>
+            )}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                className="btn-auth-primary"
+                style={{ marginBottom: 0, flex: 1 }}
+                onClick={confirmSocialLogin}
+                disabled={socialLoading}
+              >
+                {socialLoading ? <span className="btn-spinner" /> : 'Continue'}
+              </button>
+              <button
+                onClick={() => setSocialModal(false)}
+                style={{
+                  flex: '0 0 auto',
+                  padding: '14px 18px',
+                  border: '1.5px solid #e2e8f0',
+                  borderRadius: 13,
+                  background: '#fff',
+                  cursor: 'pointer',
+                  fontFamily: 'DM Sans, sans-serif',
+                  fontWeight: 600,
+                  color: '#64748b',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Decorative top band */}
       <div className="auth-top-band">
         <div className="auth-band-circles">
@@ -80,9 +174,9 @@ export default function Login() {
       <div className="auth-card-outer">
         <div className="auth-card-new">
 
-          {/* Social buttons */}
+          {/* Social buttons — now open inline modal instead of window.prompt */}
           <div className="social-row">
-            <button className="btn-social-new" onClick={() => socialLogin('Google')}>
+            <button className="btn-social-new" onClick={() => openSocialModal('Google')}>
               <svg width="18" height="18" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -91,7 +185,7 @@ export default function Login() {
               </svg>
               Continue with Google
             </button>
-            <button className="btn-social-new btn-fb" onClick={() => socialLogin('Facebook')}>
+            <button className="btn-social-new btn-fb" onClick={() => openSocialModal('Facebook')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
                 <path d="M24 12.073C24 5.404 18.627 0 12 0S0 5.404 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.514c-1.491 0-1.956.93-1.956 1.887v2.254h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/>
               </svg>
