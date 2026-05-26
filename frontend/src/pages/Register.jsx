@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../styles/Auth.css';
+import { saveToken } from './Login';   // reuse the token helper
 
 const API = 'https://healthcare-plus-api.onrender.com';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -35,7 +36,7 @@ export default function Register() {
     else if (form.password.length < 8) e.password = 'Minimum 8 characters';
     if (!form.confirm_password)  e.confirm_password = 'Required';
     else if (form.password !== form.confirm_password)
-      e.confirm_password = 'Confirm your selected password';
+      e.confirm_password = 'Passwords do not match';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -46,14 +47,16 @@ export default function Register() {
     setLoading(true);
     try {
       const res  = await fetch(`${API}/api/register`, {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body:    JSON.stringify(form),
       });
       const data = await res.json();
       if (!data.ok) { alert(data.error); return; }
-      alert('Account created successfully! You can now log in.');
-      navigate('/login');
+
+      // ✅ Auto-login: save token and go straight to home
+      saveToken(data.token);
+      navigate('/');
     } catch {
       alert('Unable to connect to server. Please try again.');
     } finally {
@@ -78,11 +81,8 @@ export default function Register() {
       <label>{label}</label>
       <div className={`auth-input-wrap-new ${errors[name] ? 'wrap-error' : ''}`}>
         <input
-          type={type}
-          name={name}
-          placeholder={placeholder}
-          value={form[name]}
-          onChange={handleChange}
+          type={type} name={name} placeholder={placeholder}
+          value={form[name]} onChange={handleChange}
           autoComplete={name === 'email' ? 'email' : name === 'dob' ? 'bday' : 'off'}
         />
       </div>
@@ -92,12 +92,9 @@ export default function Register() {
 
   return (
     <div className="auth-page">
-      {/* Top band */}
       <div className="auth-top-band auth-top-band--reg">
         <div className="auth-band-circles">
-          <span className="auth-circle c1" />
-          <span className="auth-circle c2" />
-          <span className="auth-circle c3" />
+          <span className="auth-circle c1" /><span className="auth-circle c2" /><span className="auth-circle c3" />
         </div>
         <div className="auth-brand-badge">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -109,24 +106,17 @@ export default function Register() {
         <p className="auth-band-sub">Start your health journey today</p>
       </div>
 
-      {/* Card */}
       <div className="auth-card-outer">
         <div className="auth-card-new">
-
-          {/* Step label */}
           <div className="reg-step-label">
-            <span className="step-dot active" />
-            <span className="step-dot" />
-            <span className="step-dot" />
+            <span className="step-dot active" /><span className="step-dot" /><span className="step-dot" />
             <span className="step-text">Personal Information</span>
           </div>
 
-          {/* Name row — side by side */}
           <div className="fields-row">
             <Field label="First Name *" name="first_name" placeholder="John" half />
             <Field label="Last Name *"  name="last_name"  placeholder="Doe"  half />
           </div>
-
           <Field label="Email Address *" name="email" type="email" placeholder="john.doe@example.com" />
           <Field label="Phone Number *"  name="phone" type="tel"   placeholder="+880 1234-567890" />
           <Field label="Date of Birth"   name="dob"   type="date" />
@@ -138,14 +128,9 @@ export default function Register() {
               <svg className="field-icon" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
               </svg>
-              <input
-                type={showPwd ? 'text' : 'password'}
-                name="password"
-                placeholder="Min. 8 characters"
-                value={form.password}
-                onChange={handleChange}
-                autoComplete="new-password"
-              />
+              <input type={showPwd ? 'text' : 'password'} name="password"
+                placeholder="Min. 8 characters" value={form.password}
+                onChange={handleChange} autoComplete="new-password" />
               <button className="eye-toggle" type="button" onClick={() => setShowPwd(p => !p)}>
                 {showPwd ? <EyeOff /> : <EyeOn />}
               </button>
@@ -160,14 +145,9 @@ export default function Register() {
               <svg className="field-icon" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
               </svg>
-              <input
-                type={showPwd2 ? 'text' : 'password'}
-                name="confirm_password"
-                placeholder="Re-enter your password"
-                value={form.confirm_password}
-                onChange={handleChange}
-                autoComplete="new-password"
-              />
+              <input type={showPwd2 ? 'text' : 'password'} name="confirm_password"
+                placeholder="Re-enter your password" value={form.confirm_password}
+                onChange={handleChange} autoComplete="new-password" />
               <button className="eye-toggle" type="button" onClick={() => setShowPwd2(p => !p)}>
                 {showPwd2 ? <EyeOff /> : <EyeOn />}
               </button>
@@ -180,15 +160,13 @@ export default function Register() {
             <input type="checkbox" checked={terms} onChange={e => setTerms(e.target.checked)} />
             <span className="remember-box" />
             <span className="terms-text">
-              I accept the <a href="#">Terms & Conditions</a> and <a href="#">Privacy Policy</a>
+              I accept the <a href="#">Terms &amp; Conditions</a> and <a href="#">Privacy Policy</a>
             </span>
           </label>
 
-          {/* Submit */}
           <button
             className={`btn-auth-primary ${!terms ? 'btn-auth-disabled' : ''}`}
-            onClick={handleRegister}
-            disabled={loading}
+            onClick={handleRegister} disabled={loading}
           >
             {loading
               ? <span className="btn-spinner" />

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import '../styles/Appointment.css';
+import { getToken } from './Login';   // JWT helper
 
 const API = 'https://healthcare-plus-api.onrender.com';
 
@@ -40,8 +41,8 @@ export default function Appointment() {
     if (!full_name || !email || !phone || !preferred_date || !preferred_time) {
       alert('Please fill in all required fields.'); return;
     }
-    if (!selDoc)     { alert('Please select a doctor.');          return; }
-    if (!selPayment) { alert('Please select a payment method.');  return; }
+    if (!selDoc)     { alert('Please select a doctor.');         return; }
+    if (!selPayment) { alert('Please select a payment method.'); return; }
 
     const payload = {
       ...form,
@@ -50,11 +51,14 @@ export default function Appointment() {
       total_fee:      `৳${total}`,
     };
 
+    // ✅ Send JWT token in Authorization header — works in WebView & APK
+    const token = getToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     try {
       const res  = await fetch(`${API}/api/appointment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        method: 'POST', headers, body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!data.ok) { alert('Error: ' + data.error); return; }
@@ -67,7 +71,6 @@ export default function Appointment() {
     );
     setModal(true);
 
-    /* reset */
     setForm({ full_name: '', email: '', phone: '', preferred_date: '', preferred_time: '', gender: '', reason: '' });
     setSelDoc(null);
     setSelPayment(null);
@@ -75,17 +78,13 @@ export default function Appointment() {
 
   return (
     <>
-      {/* Hero */}
       <div className="appt-hero">
-        <div className="appt-hero-icon">
-          <i className="fa-regular fa-calendar-check"></i>
-        </div>
+        <div className="appt-hero-icon"><i className="fa-regular fa-calendar-check"></i></div>
         <h1>Book an Appointment</h1>
         <p>Schedule your visit with our expert doctors</p>
       </div>
 
       <div className="appt-layout">
-        {/* ── Left: form ── */}
         <div className="appt-card">
           <div className="appt-card-title">
             <i className="fa-solid fa-notes-medical" style={{ color: 'var(--blue)' }}></i>
@@ -125,10 +124,8 @@ export default function Appointment() {
               <label>Gender</label>
               <select name="gender" value={form.gender} onChange={handleChange}>
                 <option value="">Select gender</option>
-                <option>Male</option>
-                <option>Female</option>
-                <option>Other</option>
-                <option>Prefer not to say</option>
+                <option>Male</option><option>Female</option>
+                <option>Other</option><option>Prefer not to say</option>
               </select>
             </div>
             <div className="form-group form-full">
@@ -137,17 +134,14 @@ export default function Appointment() {
             </div>
           </div>
 
-          {/* Doctors */}
           <div className="section-label">
             <i className="fa-solid fa-user-doctor"></i> Our Doctors <span style={{ color: '#ef4444' }}>*</span>
           </div>
           <div className="doctors-grid">
             {DOCTORS.map(doc => (
-              <div
-                key={doc.name}
+              <div key={doc.name}
                 className={`doctor-card ${selDoc?.name === doc.name ? 'selected' : ''}`}
-                onClick={() => setSelDoc(doc)}
-              >
+                onClick={() => setSelDoc(doc)}>
                 <div className="doctor-avatar"><i className={doc.icon}></i></div>
                 <div className="doctor-name">{doc.name}</div>
                 <div className="doctor-spec">{doc.spec}</div>
@@ -159,17 +153,14 @@ export default function Appointment() {
             ))}
           </div>
 
-          {/* Payment */}
           <div className="section-label">
             <i className="fa-solid fa-credit-card"></i> Payment Method <span style={{ color: '#ef4444' }}>*</span>
           </div>
           <div className="payment-options">
             {PAYMENTS.map(p => (
-              <div
-                key={p.id}
+              <div key={p.id}
                 className={`payment-option ${selPayment === p.id ? 'selected' : ''}`}
-                onClick={() => setSelPayment(p.id)}
-              >
+                onClick={() => setSelPayment(p.id)}>
                 <div className={`pay-icon ${p.cls}`}><i className={p.icon}></i></div>
                 <span>{p.label}</span>
               </div>
@@ -182,13 +173,12 @@ export default function Appointment() {
           </button>
         </div>
 
-        {/* ── Right: summary ── */}
+        {/* Summary */}
         <div className="appt-card summary-card">
           <div className="appt-card-title">
             <i className="fa-solid fa-receipt" style={{ color: 'var(--blue)' }}></i>
             Payment Summary
           </div>
-
           {!selDoc ? (
             <div className="summary-empty">
               <i className="fa-regular fa-calendar" style={{ fontSize: 30, display: 'block', marginBottom: 10, color: 'var(--border)' }}></i>
@@ -217,7 +207,7 @@ export default function Appointment() {
         </div>
       </div>
 
-      {/* Confirmation modal */}
+      {/* Modal */}
       <div className={`modal-overlay ${modal ? 'show' : ''}`}>
         <div className="modal-box">
           <div className="modal-icon"><i className="fa-solid fa-check"></i></div>

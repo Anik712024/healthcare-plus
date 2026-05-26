@@ -5,6 +5,12 @@ import '../styles/Auth.css';
 const API = 'https://healthcare-plus-api.onrender.com';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// ── Token helpers (localStorage — works in WebView & browser) ─────────────────
+export const saveToken  = (token) => localStorage.setItem('hc_token', token);
+export const getToken   = ()      => localStorage.getItem('hc_token');
+export const clearToken = ()      => localStorage.removeItem('hc_token');
+export const authHeader = ()      => ({ Authorization: `Bearer ${getToken()}` });
+
 export default function Login() {
   const navigate = useNavigate();
 
@@ -15,13 +21,14 @@ export default function Login() {
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
 
-  // Social login modal state
-  const [socialModal,       setSocialModal]       = useState(false);
-  const [socialProvider,    setSocialProvider]    = useState('');
-  const [socialEmail,       setSocialEmail]       = useState('');
-  const [socialEmailError,  setSocialEmailError]  = useState('');
-  const [socialLoading,     setSocialLoading]     = useState(false);
+  // Social modal
+  const [socialModal,      setSocialModal]      = useState(false);
+  const [socialProvider,   setSocialProvider]   = useState('');
+  const [socialEmail,      setSocialEmail]      = useState('');
+  const [socialEmailError, setSocialEmailError] = useState('');
+  const [socialLoading,    setSocialLoading]    = useState(false);
 
+  // Pre-fill remembered email
   useEffect(() => {
     const saved = localStorage.getItem('hc_remembered_email');
     if (saved) { setEmail(saved); setRemember(true); }
@@ -36,14 +43,19 @@ export default function Login() {
     setLoading(true);
     try {
       const res  = await fetch(`${API}/api/login`, {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, remember_me: remember, method: 'email' }),
+        body:    JSON.stringify({ email, password, remember_me: remember, method: 'email' }),
       });
       const data = await res.json();
-      if (!data.ok) { setError('Invalid email or password.'); return; }
+
+      if (!data.ok) { setError(data.error || 'Invalid email or password.'); return; }
+
+      // ✅ Save JWT token — works in WebView, browser, APK
+      saveToken(data.token);
       if (remember) localStorage.setItem('hc_remembered_email', email);
       else          localStorage.removeItem('hc_remembered_email');
+
       navigate('/');
     } catch {
       setError('Unable to connect to server. Please try again.');
@@ -52,7 +64,7 @@ export default function Login() {
     }
   };
 
-  // ── Open social modal ───────────────────────────────────────────────────────
+  // ── Social login ─────────────────────────────────────────────────────────────
   const openSocialModal = (provider) => {
     setSocialProvider(provider);
     setSocialEmail('');
@@ -60,25 +72,26 @@ export default function Login() {
     setSocialModal(true);
   };
 
-  // ── Confirm social login ────────────────────────────────────────────────────
   const confirmSocialLogin = async () => {
     setSocialEmailError('');
-    if (!socialEmail.trim()) { setSocialEmailError('Please enter your email.'); return; }
+    if (!socialEmail.trim())              { setSocialEmailError('Please enter your email.'); return; }
     if (!EMAIL_RE.test(socialEmail.trim())) { setSocialEmailError('Invalid email address.'); return; }
 
     setSocialLoading(true);
     try {
       const res  = await fetch(`${API}/api/login`, {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body:    JSON.stringify({
           email:       socialEmail.trim().toLowerCase(),
           method:      socialProvider.toLowerCase(),
           remember_me: false,
         }),
       });
       const data = await res.json();
+
       if (data.ok) {
+        saveToken(data.token);   // ✅ Save JWT
         setSocialModal(false);
         navigate('/');
       } else {
@@ -94,13 +107,11 @@ export default function Login() {
   return (
     <div className="auth-page">
 
-      {/* ── Social login modal (replaces window.prompt — works in WebView) ── */}
+      {/* ── Social login modal ── */}
       {socialModal && (
         <div className="social-modal-overlay" onClick={() => setSocialModal(false)}>
           <div className="social-modal-box" onClick={e => e.stopPropagation()}>
-            <div className="social-modal-title">
-              Continue with {socialProvider}
-            </div>
+            <div className="social-modal-title">Continue with {socialProvider}</div>
             <p className="social-modal-sub">
               Enter the email linked to your {socialProvider} account.
             </p>
@@ -135,30 +146,21 @@ export default function Login() {
               <button
                 onClick={() => setSocialModal(false)}
                 style={{
-                  flex: '0 0 auto',
-                  padding: '14px 18px',
-                  border: '1.5px solid #e2e8f0',
-                  borderRadius: 13,
-                  background: '#fff',
-                  cursor: 'pointer',
-                  fontFamily: 'DM Sans, sans-serif',
-                  fontWeight: 600,
-                  color: '#64748b',
+                  flex: '0 0 auto', padding: '14px 18px',
+                  border: '1.5px solid #e2e8f0', borderRadius: 13,
+                  background: '#fff', cursor: 'pointer',
+                  fontFamily: 'DM Sans, sans-serif', fontWeight: 600, color: '#64748b',
                 }}
-              >
-                Cancel
-              </button>
+              >Cancel</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Decorative top band */}
+      {/* Top band */}
       <div className="auth-top-band">
         <div className="auth-band-circles">
-          <span className="auth-circle c1" />
-          <span className="auth-circle c2" />
-          <span className="auth-circle c3" />
+          <span className="auth-circle c1" /><span className="auth-circle c2" /><span className="auth-circle c3" />
         </div>
         <div className="auth-brand-badge">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -174,7 +176,7 @@ export default function Login() {
       <div className="auth-card-outer">
         <div className="auth-card-new">
 
-          {/* Social buttons — now open inline modal instead of window.prompt */}
+          {/* Social buttons */}
           <div className="social-row">
             <button className="btn-social-new" onClick={() => openSocialModal('Google')}>
               <svg width="18" height="18" viewBox="0 0 24 24">
@@ -195,25 +197,20 @@ export default function Login() {
 
           <div className="auth-divider-new"><span>or sign in with email</span></div>
 
-          {/* Email field */}
+          {/* Email */}
           <div className="auth-field-new">
             <label>Email Address</label>
             <div className="auth-input-wrap-new">
               <svg className="field-icon" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <rect x="2" y="4" width="20" height="16" rx="3"/><polyline points="2,4 12,13 22,4"/>
               </svg>
-              <input
-                type="email"
-                placeholder="your.email@example.com"
-                autoComplete="email"
-                value={email}
-                onChange={e => { setEmail(e.target.value); setError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-              />
+              <input type="email" placeholder="your.email@example.com" autoComplete="email"
+                value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
+                onKeyDown={e => e.key === 'Enter' && handleLogin()} />
             </div>
           </div>
 
-          {/* Password field */}
+          {/* Password */}
           <div className="auth-field-new">
             <div className="field-label-row">
               <label>Password</label>
@@ -223,14 +220,10 @@ export default function Login() {
               <svg className="field-icon" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
               </svg>
-              <input
-                type={showPwd ? 'text' : 'password'}
-                placeholder="Enter your password"
-                autoComplete="current-password"
-                value={password}
+              <input type={showPwd ? 'text' : 'password'} placeholder="Enter your password"
+                autoComplete="current-password" value={password}
                 onChange={e => { setPassword(e.target.value); setError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-              />
+                onKeyDown={e => e.key === 'Enter' && handleLogin()} />
               <button className="eye-toggle" type="button" onClick={() => setShowPwd(p => !p)}>
                 {showPwd
                   ? <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -247,7 +240,7 @@ export default function Login() {
             <span className="remember-label">Remember me on this device</span>
           </label>
 
-          {/* Error banner */}
+          {/* Error */}
           {error && (
             <div className="auth-error-banner">
               <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
