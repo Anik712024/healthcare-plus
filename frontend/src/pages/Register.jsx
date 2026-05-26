@@ -1,10 +1,28 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../styles/Auth.css';
-import { saveToken } from './Login';   // reuse the token helper
+import { saveToken } from './Login';
 
 const API = 'https://healthcare-plus-api.onrender.com';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ✅ FIXED: Field is outside Register — prevents input focus loss on every keystroke
+const Field = ({ label, name, type = 'text', placeholder, half, value, onChange, error }) => (
+  <div className={`auth-field-new ${half ? 'field-half' : ''}`}>
+    <label>{label}</label>
+    <div className={`auth-input-wrap-new ${error ? 'wrap-error' : ''}`}>
+      <input
+        type={type}
+        name={name}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        autoComplete={name === 'email' ? 'email' : name === 'dob' ? 'bday' : 'off'}
+      />
+    </div>
+    {error && <span className="field-err-msg">{error}</span>}
+  </div>
+);
 
 export default function Register() {
   const navigate = useNavigate();
@@ -53,8 +71,6 @@ export default function Register() {
       });
       const data = await res.json();
       if (!data.ok) { alert(data.error); return; }
-
-      // ✅ Auto-login: save token and go straight to home
       saveToken(data.token);
       navigate('/');
     } catch {
@@ -74,20 +90,6 @@ export default function Register() {
     <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
     </svg>
-  );
-
-  const Field = ({ label, name, type = 'text', placeholder, half }) => (
-    <div className={`auth-field-new ${half ? 'field-half' : ''}`}>
-      <label>{label}</label>
-      <div className={`auth-input-wrap-new ${errors[name] ? 'wrap-error' : ''}`}>
-        <input
-          type={type} name={name} placeholder={placeholder}
-          value={form[name]} onChange={handleChange}
-          autoComplete={name === 'email' ? 'email' : name === 'dob' ? 'bday' : 'off'}
-        />
-      </div>
-      {errors[name] && <span className="field-err-msg">{errors[name]}</span>}
-    </div>
   );
 
   return (
@@ -114,12 +116,17 @@ export default function Register() {
           </div>
 
           <div className="fields-row">
-            <Field label="First Name *" name="first_name" placeholder="John" half />
-            <Field label="Last Name *"  name="last_name"  placeholder="Doe"  half />
+            <Field label="First Name *" name="first_name" placeholder="John" half
+              value={form.first_name} onChange={handleChange} error={errors.first_name} />
+            <Field label="Last Name *" name="last_name" placeholder="Doe" half
+              value={form.last_name} onChange={handleChange} error={errors.last_name} />
           </div>
-          <Field label="Email Address *" name="email" type="email" placeholder="john.doe@example.com" />
-          <Field label="Phone Number *"  name="phone" type="tel"   placeholder="+880 1234-567890" />
-          <Field label="Date of Birth"   name="dob"   type="date" />
+          <Field label="Email Address *" name="email" type="email" placeholder="john.doe@example.com"
+            value={form.email} onChange={handleChange} error={errors.email} />
+          <Field label="Phone Number *" name="phone" type="tel" placeholder="+880 1234-567890"
+            value={form.phone} onChange={handleChange} error={errors.phone} />
+          <Field label="Date of Birth" name="dob" type="date"
+            value={form.dob} onChange={handleChange} error={errors.dob} />
 
           {/* Password */}
           <div className="auth-field-new">
