@@ -167,8 +167,8 @@ export default function Register() {
             <input type="checkbox" checked={terms} onChange={e => setTerms(e.target.checked)} />
             <span className="remember-box" />
             <span className="terms-text">
-              I accept the <a href="#">Terms &amp; Conditions</a> and <a href="#">Privacy Policy</a>
-            </span>
+  I accept the <Link to="/terms">Terms &amp; Conditions</Link> and <Link to="/privacy">Privacy Policy</Link>
+</span>
           </label>
 
           <button
