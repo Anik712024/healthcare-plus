@@ -12,11 +12,11 @@ const DOCTORS = [
   { name: 'Dr. Nadia Islam',  spec: 'Neurology',        fee: 900,  icon: 'fa-solid fa-brain' },
 ];
 
+// ✅ Cash removed — only online payment methods
 const PAYMENTS = [
-  { id: 'bKash',                  label: 'bKash',                  cls: 'pay-bkash', icon: 'fa-solid fa-wallet' },
-  { id: 'Nagad',                  label: 'Nagad',                  cls: 'pay-nagad', icon: 'fa-solid fa-wallet' },
-  { id: 'Credit/Debit Card',      label: 'Credit / Debit Card',    cls: 'pay-card',  icon: 'fa-regular fa-credit-card' },
-  { id: 'Cash (Pay at Hospital)', label: 'Cash (Pay at Hospital)', cls: 'pay-cash',  icon: 'fa-solid fa-money-bill-wave' },
+  { id: 'bKash',             label: 'bKash',             cls: 'pay-bkash', icon: 'fa-solid fa-wallet' },
+  { id: 'Nagad',             label: 'Nagad',             cls: 'pay-nagad', icon: 'fa-solid fa-wallet' },
+  { id: 'Credit/Debit Card', label: 'Credit / Debit Card', cls: 'pay-card', icon: 'fa-regular fa-credit-card' },
 ];
 
 export default function Appointment() {
@@ -26,8 +26,7 @@ export default function Appointment() {
   });
   const [selDoc,     setSelDoc]     = useState(null);
   const [selPayment, setSelPayment] = useState(null);
-  const [modal,      setModal]      = useState(false);
-  const [modalMsg,   setModalMsg]   = useState('');
+  const [loading,    setLoading]    = useState(false);
 
   const fee   = selDoc ? selDoc.fee : 0;
   const tax   = Math.round(fee * 0.05);
@@ -37,12 +36,15 @@ export default function Appointment() {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
   const confirmAppointment = async () => {
+    // ── Validation ────────────────────────────────────────────────────────────
     const { full_name, email, phone, preferred_date, preferred_time } = form;
     if (!full_name || !email || !phone || !preferred_date || !preferred_time) {
       alert('Please fill in all required fields.'); return;
     }
     if (!selDoc)     { alert('Please select a doctor.');         return; }
     if (!selPayment) { alert('Please select a payment method.'); return; }
+
+    setLoading(true);
 
     const payload = {
       ...form,
@@ -51,29 +53,33 @@ export default function Appointment() {
       total_fee:      `৳${total}`,
     };
 
-    // ✅ Send JWT token in Authorization header — works in WebView & APK
-    const token = getToken();
+    // ── Send JWT token ────────────────────────────────────────────────────────
+    const token   = getToken();
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     try {
-      const res  = await fetch(`${API}/api/appointment`, {
+      // ── Call payment initiate endpoint ────────────────────────────────────
+      const res  = await fetch(`${API}/api/payment/initiate`, {
         method: 'POST', headers, body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!data.ok) { alert('Error: ' + data.error); return; }
-    } catch {
-      console.warn('Backend unavailable — showing modal anyway.');
+
+      if (!data.ok) {
+        alert('Payment Error: ' + (data.error || 'Something went wrong.'));
+        setLoading(false);
+        return;
+      }
+
+      // ── Redirect to SSLCommerz payment page ───────────────────────────────
+      // User will see bKash / Nagad / Card options on SSLCommerz's page
+      window.location.href = data.GatewayPageURL;
+
+    } catch (err) {
+      console.error('Payment initiation failed:', err);
+      alert('Could not connect to payment gateway. Please try again.');
+      setLoading(false);
     }
-
-    setModalMsg(
-      `${selDoc.name} on ${form.preferred_date} at ${form.preferred_time}. Payment: ${selPayment}. Total: ৳${total}`
-    );
-    setModal(true);
-
-    setForm({ full_name: '', email: '', phone: '', preferred_date: '', preferred_time: '', gender: '', reason: '' });
-    setSelDoc(null);
-    setSelPayment(null);
   };
 
   return (
@@ -156,6 +162,13 @@ export default function Appointment() {
           <div className="section-label">
             <i className="fa-solid fa-credit-card"></i> Payment Method <span style={{ color: '#ef4444' }}>*</span>
           </div>
+
+          {/* Info banner */}
+          <div className="payment-info-banner">
+            <i className="fa-solid fa-shield-halved"></i>
+            Secure payment powered by SSLCommerz — supports bKash, Nagad &amp; Cards
+          </div>
+
           <div className="payment-options">
             {PAYMENTS.map(p => (
               <div key={p.id}
@@ -167,9 +180,23 @@ export default function Appointment() {
             ))}
           </div>
 
-          <button className="btn-submit-appt" onClick={confirmAppointment}>
-            <i className="fa-regular fa-calendar-check"></i>
-            Confirm Appointment &amp; Payment
+          <button
+            className="btn-submit-appt"
+            onClick={confirmAppointment}
+            disabled={loading}
+            style={{ opacity: loading ? 0.7 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
+          >
+            {loading ? (
+              <>
+                <i className="fa-solid fa-spinner fa-spin"></i>
+                Redirecting to Payment...
+              </>
+            ) : (
+              <>
+                <i className="fa-solid fa-lock"></i>
+                Confirm &amp; Pay Securely
+              </>
+            )}
           </button>
         </div>
 
@@ -202,18 +229,11 @@ export default function Appointment() {
                   <i className="fa-solid fa-check-circle"></i> Payment via {selPayment}
                 </div>
               )}
+              <div className="summary-secure">
+                <i className="fa-solid fa-lock"></i> 100% Secure · Powered by SSLCommerz
+              </div>
             </>
           )}
-        </div>
-      </div>
-
-      {/* Modal */}
-      <div className={`modal-overlay ${modal ? 'show' : ''}`}>
-        <div className="modal-box">
-          <div className="modal-icon"><i className="fa-solid fa-check"></i></div>
-          <h2>Appointment Confirmed!</h2>
-          <p>{modalMsg}</p>
-          <button className="modal-close" onClick={() => setModal(false)}>Done</button>
         </div>
       </div>
     </>

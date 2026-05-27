@@ -11,6 +11,8 @@ import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
+import PaymentSuccess from './pages/PaymentSuccess';
+import PaymentFail from './pages/PaymentFail';
 import './styles/global.css';
 
 export default function App() {
@@ -23,6 +25,9 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/services" element={<Services />} />
             <Route path="/appointment" element={<Appointment />} />
+            <Route path="/appointment/success" element={<PaymentSuccess />} />
+            <Route path="/appointment/fail"    element={<PaymentFail />} />
+            <Route path="/appointment/cancel"  element={<PaymentFail />} />
             <Route path="/bmi" element={<BMI />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/login" element={<Login />} />

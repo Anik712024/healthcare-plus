@@ -1,5 +1,5 @@
 """
-HealthCare+ — Flask Backend  v3.1  (JWT, PostgreSQL, APK-safe, Forgot Password)
+HealthCare+ — Flask Backend  v4.0  (JWT, PostgreSQL, APK-safe, SSLCommerz Payment)
 Endpoints:
   GET  /api/health
   POST /api/register
@@ -11,14 +11,18 @@ Endpoints:
   POST /api/forgot-password
   POST /api/verify-reset-token
   POST /api/reset-password
+  POST /api/payment/initiate
+  POST /api/payment/success
+  POST /api/payment/fail
+  POST /api/payment/cancel
   GET  /api/admin/appointments
   GET  /api/admin/contacts
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-import re, os, random, psycopg2, psycopg2.extras, jwt
+import re, os, random, psycopg2, psycopg2.extras, jwt, requests, uuid
 from datetime import datetime, timedelta, timezone
 
 # ── App setup ─────────────────────────────────────────────────────────────────
@@ -28,6 +32,20 @@ app = Flask(__name__)
 SECRET_KEY     = os.environ.get("SECRET_KEY", "change-this-in-render-env-vars")
 DATABASE_URL   = os.environ.get("DATABASE_URL")
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
+
+# SSLCommerz credentials — set these in Render environment variables
+SSLC_STORE_ID   = os.environ.get("SSLC_STORE_ID",   "healt6a16b774b080d")
+SSLC_STORE_PASS = os.environ.get("SSLC_STORE_PASS",  "healt6a16b774b080d@ssl")
+SSLC_SANDBOX    = os.environ.get("SSLC_SANDBOX",     "true").lower() == "true"
+
+SSLC_BASE_URL = (
+    "https://sandbox.sslcommerz.com"
+    if SSLC_SANDBOX else
+    "https://securepay.sslcommerz.com"
+)
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://healthcare-plus-vn1y.vercel.app")
+BACKEND_URL  = os.environ.get("BACKEND_URL",  "https://healthcare-plus-api.onrender.com")
 
 CORS(
     app,
@@ -76,9 +94,19 @@ def init_db():
             doctor         TEXT NOT NULL,
             payment_method TEXT NOT NULL,
             total_fee      TEXT NOT NULL,
+            tran_id        TEXT,
+            payment_status TEXT DEFAULT 'pending',
             created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Add new columns if they don't exist (for existing databases)
+    try:
+        cur.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS tran_id TEXT")
+        cur.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'pending'")
+        conn.commit()
+    except Exception:
+        conn.rollback()
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS contacts (
@@ -100,7 +128,6 @@ def init_db():
 init_db()
 
 # ── In-memory reset token store ───────────────────────────────────────────────
-# Format: { "email": { "token": "123456", "expires": datetime } }
 reset_tokens = {}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -151,7 +178,7 @@ def handle_options():
 
 @app.route("/api/health")
 def health():
-    return jsonify({"ok": True, "service": "HealthCare+ API", "version": "3.1.0"})
+    return jsonify({"ok": True, "service": "HealthCare+ API", "version": "4.0.0"})
 
 
 # ── Register ──────────────────────────────────────────────────────────────────
@@ -221,47 +248,26 @@ def login():
     try:
         if method == "email":
             if not password:
-                return jsonify({"ok": False, "error": "Please fill in both fields."}), 400
-
+                return jsonify({"ok": False, "error": "Password is required."}), 400
             cur.execute("SELECT * FROM users WHERE email = %s", (email,))
             user = cur.fetchone()
             if not user or not check_password_hash(user["password_hash"], password):
                 return jsonify({"ok": False, "error": "Invalid email or password."}), 401
-
         else:
-            cur.execute("SELECT * FROM users WHERE email = %s", (email,))
-            user = cur.fetchone()
-            if not user:
-                cur.execute(
-                    """INSERT INTO users (first_name, last_name, email, phone, dob, password_hash)
-                       VALUES (%s,%s,%s,%s,%s,%s) RETURNING *""",
-                    ("Social", "User", email, "", "",
-                     generate_password_hash(os.urandom(24).hex()))
-                )
-                user = cur.fetchone()
-                conn.commit()
-
-        token = make_token(user["id"], email, remember=remember_me)
-        return jsonify({
-            "ok":    True,
-            "token": token,
-            "user":  {"id":         user["id"],
-                      "first_name": user["first_name"],
-                      "last_name":  user["last_name"],
-                      "email":      user["email"]},
-        })
+            return jsonify({"ok": False, "error": "Unsupported login method."}), 400
     finally:
         cur.close(); conn.close()
 
+    token = make_token(user["id"], email, remember_me)
+    return jsonify({
+        "ok":    True,
+        "token": token,
+        "user":  {"id": user["id"], "first_name": user["first_name"],
+                  "last_name": user["last_name"], "email": email},
+    })
 
-# ── Logout ────────────────────────────────────────────────────────────────────
 
-@app.route("/api/logout", methods=["POST", "OPTIONS"])
-def logout():
-    return jsonify({"ok": True, "message": "Logged out. Delete the token on the client."})
-
-
-# ── Me (protected) ────────────────────────────────────────────────────────────
+# ── Me ────────────────────────────────────────────────────────────────────────
 
 @app.route("/api/me", methods=["GET"])
 def me():
@@ -283,7 +289,7 @@ def me():
     return jsonify({"ok": True, "user": dict(user)})
 
 
-# ── Appointment ───────────────────────────────────────────────────────────────
+# ── Appointment (direct, non-payment) ─────────────────────────────────────────
 
 @app.route("/api/appointment", methods=["POST", "OPTIONS"])
 def appointment():
@@ -312,10 +318,10 @@ def appointment():
         cur.execute(
             """INSERT INTO appointments
                (user_id,full_name,email,phone,preferred_date,preferred_time,
-                gender,reason,doctor,payment_method,total_fee)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                gender,reason,doctor,payment_method,total_fee,payment_status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (uid, full_name, email, phone, preferred_date, preferred_time,
-             gender, reason, doctor, payment_method, total_fee)
+             gender, reason, doctor, payment_method, total_fee, 'confirmed')
         )
         conn.commit()
     finally:
@@ -325,6 +331,209 @@ def appointment():
         "ok": True,
         "message": f"Appointment booked with {doctor} on {preferred_date} at {preferred_time}."
     })
+
+
+# ── Payment: Initiate ─────────────────────────────────────────────────────────
+
+@app.route("/api/payment/initiate", methods=["POST", "OPTIONS"])
+def payment_initiate():
+    data = request.get_json(force=True, silent=True) or {}
+
+    full_name      = (data.get("full_name")      or "").strip()
+    email          = (data.get("email")          or "").strip().lower()
+    phone          = (data.get("phone")          or "").strip()
+    preferred_date = (data.get("preferred_date") or "").strip()
+    preferred_time = (data.get("preferred_time") or "").strip()
+    gender         = (data.get("gender")         or "").strip()
+    reason         = (data.get("reason")         or "").strip()
+    doctor         = (data.get("doctor")         or "").strip()
+    payment_method = (data.get("payment_method") or "").strip()
+    total_fee_str  = (data.get("total_fee")      or "0").strip()
+
+    if not all([full_name, email, phone, preferred_date, preferred_time, doctor, payment_method]):
+        return jsonify({"ok": False, "error": "Please fill in all required fields."}), 400
+    if not valid_email(email):
+        return jsonify({"ok": False, "error": "Invalid email address."}), 400
+
+    # Parse amount (strip ৳ sign if present)
+    amount_str = total_fee_str.replace("৳", "").strip()
+    try:
+        amount = float(amount_str)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Invalid fee amount."}), 400
+
+    uid     = current_user_id()
+    tran_id = "HCPLUS-" + str(uuid.uuid4()).upper()[:16]
+
+    # Save pending appointment to DB
+    conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute(
+            """INSERT INTO appointments
+               (user_id,full_name,email,phone,preferred_date,preferred_time,
+                gender,reason,doctor,payment_method,total_fee,tran_id,payment_status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
+            (uid, full_name, email, phone, preferred_date, preferred_time,
+             gender, reason, doctor, payment_method, total_fee_str, tran_id, 'pending')
+        )
+        conn.commit()
+    finally:
+        cur.close(); conn.close()
+
+    # Build SSLCommerz payload
+    payload = {
+        "store_id":          SSLC_STORE_ID,
+        "store_passwd":      SSLC_STORE_PASS,
+        "total_amount":      str(amount),
+        "currency":          "BDT",
+        "tran_id":           tran_id,
+        "success_url":       f"{BACKEND_URL}/api/payment/success",
+        "fail_url":          f"{BACKEND_URL}/api/payment/fail",
+        "cancel_url":        f"{BACKEND_URL}/api/payment/cancel",
+        "ipn_url":           f"{BACKEND_URL}/api/payment/ipn",
+        "cus_name":          full_name,
+        "cus_email":         email,
+        "cus_phone":         phone,
+        "cus_add1":          "Dhaka, Bangladesh",
+        "cus_city":          "Dhaka",
+        "cus_country":       "Bangladesh",
+        "product_name":      f"Doctor Appointment - {doctor}",
+        "product_category":  "Healthcare",
+        "product_profile":   "general",
+        "shipping_method":   "NO",
+        "num_of_item":       1,
+        "emi_option":        0,
+    }
+
+    try:
+        resp = requests.post(
+            f"{SSLC_BASE_URL}/gwprocess/apiprocesspayment.php",
+            data=payload,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Payment gateway error: {str(e)}"}), 502
+
+    if result.get("status") != "SUCCESS":
+        return jsonify({
+            "ok":    False,
+            "error": result.get("failedreason", "Payment initiation failed.")
+        }), 400
+
+    return jsonify({
+        "ok":              True,
+        "GatewayPageURL":  result["GatewayPageURL"],
+        "tran_id":         tran_id,
+    })
+
+
+# ── Payment: Success callback (POST from SSLCommerz) ─────────────────────────
+
+@app.route("/api/payment/success", methods=["POST", "GET", "OPTIONS"])
+def payment_success():
+    data    = request.form or request.args
+    tran_id = data.get("tran_id", "")
+    val_id  = data.get("val_id", "")
+    status  = data.get("status", "")
+
+    if tran_id and status == "VALID":
+        # Verify with SSLCommerz
+        try:
+            verify_resp = requests.get(
+                f"{SSLC_BASE_URL}/validator/api/validationserverAPI.php",
+                params={
+                    "val_id":     val_id,
+                    "store_id":   SSLC_STORE_ID,
+                    "store_passwd": SSLC_STORE_PASS,
+                    "format":     "json",
+                },
+                timeout=30,
+            )
+            v = verify_resp.json()
+            verified = v.get("status") in ("VALID", "VALIDATED")
+        except Exception:
+            verified = False
+
+        new_status = "confirmed" if verified else "pending"
+
+        conn = get_db(); cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE appointments SET payment_status=%s WHERE tran_id=%s",
+                (new_status, tran_id)
+            )
+            conn.commit()
+        finally:
+            cur.close(); conn.close()
+
+    return redirect(f"{FRONTEND_URL}/appointment/success?tran_id={tran_id}")
+
+
+# ── Payment: Fail callback ────────────────────────────────────────────────────
+
+@app.route("/api/payment/fail", methods=["POST", "GET", "OPTIONS"])
+def payment_fail():
+    data    = request.form or request.args
+    tran_id = data.get("tran_id", "")
+
+    if tran_id:
+        conn = get_db(); cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE appointments SET payment_status='failed' WHERE tran_id=%s",
+                (tran_id,)
+            )
+            conn.commit()
+        finally:
+            cur.close(); conn.close()
+
+    return redirect(f"{FRONTEND_URL}/appointment/fail?tran_id={tran_id}")
+
+
+# ── Payment: Cancel callback ──────────────────────────────────────────────────
+
+@app.route("/api/payment/cancel", methods=["POST", "GET", "OPTIONS"])
+def payment_cancel():
+    data    = request.form or request.args
+    tran_id = data.get("tran_id", "")
+
+    if tran_id:
+        conn = get_db(); cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE appointments SET payment_status='cancelled' WHERE tran_id=%s",
+                (tran_id,)
+            )
+            conn.commit()
+        finally:
+            cur.close(); conn.close()
+
+    return redirect(f"{FRONTEND_URL}/appointment/cancel?tran_id={tran_id}")
+
+
+# ── Payment: IPN (Instant Payment Notification) ───────────────────────────────
+
+@app.route("/api/payment/ipn", methods=["POST", "OPTIONS"])
+def payment_ipn():
+    data    = request.form or {}
+    tran_id = data.get("tran_id", "")
+    status  = data.get("status", "")
+
+    if tran_id and status == "VALID":
+        conn = get_db(); cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE appointments SET payment_status='confirmed' WHERE tran_id=%s",
+                (tran_id,)
+            )
+            conn.commit()
+        finally:
+            cur.close(); conn.close()
+
+    return jsonify({"ok": True})
 
 
 # ── Contact ───────────────────────────────────────────────────────────────────
@@ -375,10 +584,8 @@ def forgot_password():
         cur.close(); conn.close()
 
     if not user:
-        # Don't reveal if email exists
         return jsonify({"ok": True, "message": "If this email exists, a reset code has been sent.", "code": ""})
 
-    # Generate 6-digit code valid for 15 minutes
     code = str(random.randint(100000, 999999))
     reset_tokens[email] = {
         "token":   code,
@@ -388,9 +595,9 @@ def forgot_password():
     print(f"[RESET CODE] {email} → {code}", flush=True)
 
     return jsonify({
-        "ok":     True,
+        "ok":      True,
         "message": "Reset code generated.",
-        "code":   code,   # shown to user directly since no email service
+        "code":    code,
     })
 
 
