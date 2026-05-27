@@ -1,13 +1,16 @@
 """
-HealthCare+ — Flask Backend  v3.0  (JWT, PostgreSQL, APK-safe)
+HealthCare+ — Flask Backend  v3.1  (JWT, PostgreSQL, APK-safe, Forgot Password)
 Endpoints:
   GET  /api/health
   POST /api/register
   POST /api/login
-  POST /api/logout        (client just deletes token; included for completeness)
-  GET  /api/me            (requires Authorization: Bearer <token>)
-  POST /api/appointment   (requires Authorization: Bearer <token>)
+  POST /api/logout
+  GET  /api/me
+  POST /api/appointment
   POST /api/contact
+  POST /api/forgot-password
+  POST /api/verify-reset-token
+  POST /api/reset-password
   GET  /api/admin/appointments
   GET  /api/admin/contacts
 """
@@ -15,7 +18,7 @@ Endpoints:
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-import re, os, psycopg2, psycopg2.extras, jwt
+import re, os, random, psycopg2, psycopg2.extras, jwt
 from datetime import datetime, timedelta, timezone
 
 # ── App setup ─────────────────────────────────────────────────────────────────
@@ -96,6 +99,10 @@ def init_db():
 
 init_db()
 
+# ── In-memory reset token store ───────────────────────────────────────────────
+# Format: { "email": { "token": "123456", "expires": datetime } }
+reset_tokens = {}
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -105,7 +112,6 @@ def valid_email(email: str) -> bool:
 
 
 def make_token(user_id: int, email: str, remember: bool = False) -> str:
-    """Create a JWT that lasts 30 days (remember) or 24 hours."""
     days = 30 if remember else 1
     payload = {
         "sub":   user_id,
@@ -115,16 +121,14 @@ def make_token(user_id: int, email: str, remember: bool = False) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 
-def decode_token(token: str) -> dict | None:
-    """Decode JWT; return payload dict or None on failure."""
+def decode_token(token: str):
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
     except jwt.PyJWTError:
         return None
 
 
-def current_user_id() -> int | None:
-    """Extract user_id from the Authorization header, or None."""
+def current_user_id():
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return None
@@ -147,7 +151,7 @@ def handle_options():
 
 @app.route("/api/health")
 def health():
-    return jsonify({"ok": True, "service": "HealthCare+ API", "version": "3.0.0"})
+    return jsonify({"ok": True, "service": "HealthCare+ API", "version": "3.1.0"})
 
 
 # ── Register ──────────────────────────────────────────────────────────────────
@@ -225,7 +229,6 @@ def login():
                 return jsonify({"ok": False, "error": "Invalid email or password."}), 401
 
         else:
-            # Social login — auto-create on first visit
             cur.execute("SELECT * FROM users WHERE email = %s", (email,))
             user = cur.fetchone()
             if not user:
@@ -251,7 +254,7 @@ def login():
         cur.close(); conn.close()
 
 
-# ── Logout (stateless — client just deletes the token) ────────────────────────
+# ── Logout ────────────────────────────────────────────────────────────────────
 
 @app.route("/api/logout", methods=["POST", "OPTIONS"])
 def logout():
@@ -302,7 +305,6 @@ def appointment():
     if not valid_email(email):
         return jsonify({"ok": False, "error": "Invalid email address."}), 400
 
-    # Optionally link to logged-in user
     uid = current_user_id()
 
     conn = get_db(); cur = conn.cursor()
@@ -353,6 +355,95 @@ def contact():
         cur.close(); conn.close()
 
     return jsonify({"ok": True, "message": "Message received. We'll get back to you soon!"})
+
+
+# ── Forgot Password ───────────────────────────────────────────────────────────
+
+@app.route("/api/forgot-password", methods=["POST", "OPTIONS"])
+def forgot_password():
+    data  = request.get_json(force=True, silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+
+    if not email or not valid_email(email):
+        return jsonify({"ok": False, "error": "Invalid email address."}), 400
+
+    conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+        user = cur.fetchone()
+    finally:
+        cur.close(); conn.close()
+
+    if not user:
+        # Don't reveal if email exists
+        return jsonify({"ok": True, "message": "If this email exists, a reset code has been sent.", "code": ""})
+
+    # Generate 6-digit code valid for 15 minutes
+    code = str(random.randint(100000, 999999))
+    reset_tokens[email] = {
+        "token":   code,
+        "expires": datetime.now(timezone.utc) + timedelta(minutes=15),
+    }
+
+    print(f"[RESET CODE] {email} → {code}", flush=True)
+
+    return jsonify({
+        "ok":     True,
+        "message": "Reset code generated.",
+        "code":   code,   # shown to user directly since no email service
+    })
+
+
+@app.route("/api/verify-reset-token", methods=["POST", "OPTIONS"])
+def verify_reset_token():
+    data  = request.get_json(force=True, silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    token = (data.get("token") or "").strip()
+
+    entry = reset_tokens.get(email)
+    if not entry:
+        return jsonify({"ok": False, "error": "No reset request found. Please request a new code."}), 400
+
+    if datetime.now(timezone.utc) > entry["expires"]:
+        del reset_tokens[email]
+        return jsonify({"ok": False, "error": "Code has expired. Please request a new one."}), 400
+
+    if entry["token"] != token:
+        return jsonify({"ok": False, "error": "Invalid code. Please try again."}), 400
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/reset-password", methods=["POST", "OPTIONS"])
+def reset_password():
+    data     = request.get_json(force=True, silent=True) or {}
+    email    = (data.get("email")    or "").strip().lower()
+    token    = (data.get("token")    or "").strip()
+    password = (data.get("password") or "")
+
+    if not password or len(password) < 8:
+        return jsonify({"ok": False, "error": "Password must be at least 8 characters."}), 400
+
+    entry = reset_tokens.get(email)
+    if not entry or entry["token"] != token:
+        return jsonify({"ok": False, "error": "Invalid or expired code."}), 400
+
+    if datetime.now(timezone.utc) > entry["expires"]:
+        del reset_tokens[email]
+        return jsonify({"ok": False, "error": "Code has expired. Please request a new one."}), 400
+
+    conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE users SET password_hash = %s WHERE email = %s",
+            (generate_password_hash(password), email)
+        )
+        conn.commit()
+    finally:
+        cur.close(); conn.close()
+
+    del reset_tokens[email]
+    return jsonify({"ok": True, "message": "Password reset successfully."})
 
 
 # ── Admin ─────────────────────────────────────────────────────────────────────

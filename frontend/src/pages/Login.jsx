@@ -214,7 +214,7 @@ export default function Login() {
           <div className="auth-field-new">
             <div className="field-label-row">
               <label>Password</label>
-              <a href="#" className="forgot-link">Forgot password?</a>
+              <Link to="/forgot-password" className="forgot-link">Forgot password?</Link>
             </div>
             <div className="auth-input-wrap-new">
               <svg className="field-icon" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
