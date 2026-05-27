@@ -408,7 +408,7 @@ def payment_initiate():
 
     try:
         resp = requests.post(
-            f"{SSLC_BASE_URL}/gwprocess/apiprocesspayment.php",
+            f"{SSLC_BASE_URL}/gwprocess/v4/api.php",
             data=payload,
             timeout=30,
         )
