@@ -12,11 +12,10 @@ const DOCTORS = [
   { name: 'Dr. Nadia Islam',  spec: 'Neurology',        fee: 900,  icon: 'fa-solid fa-brain' },
 ];
 
-// ✅ Cash removed — only online payment methods
 const PAYMENTS = [
-  { id: 'bKash',             label: 'bKash',             cls: 'pay-bkash', icon: 'fa-solid fa-wallet' },
-  { id: 'Nagad',             label: 'Nagad',             cls: 'pay-nagad', icon: 'fa-solid fa-wallet' },
-  { id: 'Credit/Debit Card', label: 'Credit / Debit Card', cls: 'pay-card', icon: 'fa-regular fa-credit-card' },
+  { id: 'bKash',             label: 'bKash',               cls: 'pay-bkash', icon: 'fa-solid fa-wallet',         needsNumber: true,  placeholder: 'Enter bKash number',  color: '#e2136e' },
+  { id: 'Nagad',             label: 'Nagad',               cls: 'pay-nagad', icon: 'fa-solid fa-wallet',         needsNumber: true,  placeholder: 'Enter Nagad number',  color: '#f0692b' },
+  { id: 'Credit/Debit Card', label: 'Credit / Debit Card', cls: 'pay-card',  icon: 'fa-regular fa-credit-card',  needsNumber: false, placeholder: '',                    color: '#2563eb' },
 ];
 
 export default function Appointment() {
@@ -24,9 +23,11 @@ export default function Appointment() {
     full_name: '', email: '', phone: '',
     preferred_date: '', preferred_time: '', gender: '', reason: '',
   });
-  const [selDoc,     setSelDoc]     = useState(null);
-  const [selPayment, setSelPayment] = useState(null);
-  const [loading,    setLoading]    = useState(false);
+  const [selDoc,        setSelDoc]        = useState(null);
+  const [selPayment,    setSelPayment]    = useState(null);
+  const [mobileNumber,  setMobileNumber]  = useState('');
+  const [mobileError,   setMobileError]   = useState('');
+  const [loading,       setLoading]       = useState(false);
 
   const fee   = selDoc ? selDoc.fee : 0;
   const tax   = Math.round(fee * 0.05);
@@ -35,8 +36,21 @@ export default function Appointment() {
   const handleChange = e =>
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
+  const handlePaymentSelect = (paymentId) => {
+    setSelPayment(paymentId);
+    setMobileNumber('');
+    setMobileError('');
+  };
+
+  const selectedPaymentObj = PAYMENTS.find(p => p.id === selPayment);
+
+  const validateMobileNumber = (number) => {
+    const cleaned = number.replace(/\D/g, '');
+    if (cleaned.length < 11) return false;
+    return true;
+  };
+
   const confirmAppointment = async () => {
-    // ── Validation ────────────────────────────────────────────────────────────
     const { full_name, email, phone, preferred_date, preferred_time } = form;
     if (!full_name || !email || !phone || !preferred_date || !preferred_time) {
       alert('Please fill in all required fields.'); return;
@@ -44,22 +58,33 @@ export default function Appointment() {
     if (!selDoc)     { alert('Please select a doctor.');         return; }
     if (!selPayment) { alert('Please select a payment method.'); return; }
 
+    // Validate mobile number for bKash/Nagad
+    if (selectedPaymentObj?.needsNumber) {
+      if (!mobileNumber.trim()) {
+        setMobileError(`Please enter your ${selPayment} number.`);
+        return;
+      }
+      if (!validateMobileNumber(mobileNumber)) {
+        setMobileError(`Please enter a valid ${selPayment} number (11 digits).`);
+        return;
+      }
+    }
+
     setLoading(true);
 
     const payload = {
       ...form,
       doctor:         selDoc.name,
       payment_method: selPayment,
+      mobile_number:  selectedPaymentObj?.needsNumber ? mobileNumber : undefined,
       total_fee:      `৳${total}`,
     };
 
-    // ── Send JWT token ────────────────────────────────────────────────────────
     const token   = getToken();
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     try {
-      // ── Call payment initiate endpoint ────────────────────────────────────
       const res  = await fetch(`${API}/api/payment/initiate`, {
         method: 'POST', headers, body: JSON.stringify(payload),
       });
@@ -71,8 +96,6 @@ export default function Appointment() {
         return;
       }
 
-      // ── Redirect to SSLCommerz payment page ───────────────────────────────
-      // User will see bKash / Nagad / Card options on SSLCommerz's page
       window.location.href = data.GatewayPageURL;
 
     } catch (err) {
@@ -163,7 +186,6 @@ export default function Appointment() {
             <i className="fa-solid fa-credit-card"></i> Payment Method <span style={{ color: '#ef4444' }}>*</span>
           </div>
 
-          {/* Info banner */}
           <div className="payment-info-banner">
             <i className="fa-solid fa-shield-halved"></i>
             Secure payment powered by SSLCommerz — supports bKash, Nagad &amp; Cards
@@ -173,18 +195,99 @@ export default function Appointment() {
             {PAYMENTS.map(p => (
               <div key={p.id}
                 className={`payment-option ${selPayment === p.id ? 'selected' : ''}`}
-                onClick={() => setSelPayment(p.id)}>
+                onClick={() => handlePaymentSelect(p.id)}>
                 <div className={`pay-icon ${p.cls}`}><i className={p.icon}></i></div>
                 <span>{p.label}</span>
               </div>
             ))}
           </div>
 
+          {/* ── Mobile number input for bKash / Nagad ── */}
+          {selPayment && selectedPaymentObj?.needsNumber && (
+            <div style={{
+              marginTop: 16,
+              padding: '20px',
+              background: '#f9fafb',
+              borderRadius: 14,
+              border: `2px solid ${mobileError ? '#ef4444' : selectedPaymentObj.color}`,
+              animation: 'slideDown 0.3s ease',
+            }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                color: '#374151',
+                marginBottom: 10,
+              }}>
+                <i className="fa-solid fa-mobile-screen" style={{ marginRight: 8, color: selectedPaymentObj.color }}></i>
+                {selPayment} Account Number <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+
+              <div style={{ position: 'relative' }}>
+                <span style={{
+                  position: 'absolute', left: 14, top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#9ca3af', fontSize: '0.875rem', fontWeight: 500,
+                  pointerEvents: 'none',
+                }}>+880</span>
+                <input
+                  type="tel"
+                  value={mobileNumber}
+                  onChange={e => {
+                    setMobileNumber(e.target.value);
+                    setMobileError('');
+                  }}
+                  placeholder={selectedPaymentObj.placeholder}
+                  maxLength={14}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px 12px 56px',
+                    border: `1.5px solid ${mobileError ? '#ef4444' : '#d1d5db'}`,
+                    borderRadius: 10,
+                    fontSize: '1rem',
+                    outline: 'none',
+                    background: '#fff',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.2s',
+                  }}
+                  onFocus={e => e.target.style.borderColor = selectedPaymentObj.color}
+                  onBlur={e => e.target.style.borderColor = mobileError ? '#ef4444' : '#d1d5db'}
+                />
+              </div>
+
+              {mobileError && (
+                <p style={{
+                  marginTop: 8, color: '#ef4444',
+                  fontSize: '0.8rem', display: 'flex',
+                  alignItems: 'center', gap: 6,
+                }}>
+                  <i className="fa-solid fa-circle-exclamation"></i>
+                  {mobileError}
+                </p>
+              )}
+
+              <p style={{
+                marginTop: 8, color: '#6b7280',
+                fontSize: '0.78rem',
+              }}>
+                <i className="fa-solid fa-circle-info" style={{ marginRight: 4 }}></i>
+                Enter the {selPayment} number you want to pay from
+              </p>
+            </div>
+          )}
+
+          <style>{`
+            @keyframes slideDown {
+              from { opacity: 0; transform: translateY(-10px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
+
           <button
             className="btn-submit-appt"
             onClick={confirmAppointment}
             disabled={loading}
-            style={{ opacity: loading ? 0.7 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
+            style={{ opacity: loading ? 0.7 : 1, cursor: loading ? 'not-allowed' : 'pointer', marginTop: 20 }}
           >
             {loading ? (
               <>
@@ -227,6 +330,11 @@ export default function Appointment() {
               {selPayment && (
                 <div className="summary-badge">
                   <i className="fa-solid fa-check-circle"></i> Payment via {selPayment}
+                  {selectedPaymentObj?.needsNumber && mobileNumber && (
+                    <span style={{ display: 'block', fontSize: '0.8rem', marginTop: 4, opacity: 0.8 }}>
+                      {mobileNumber}
+                    </span>
+                  )}
                 </div>
               )}
               <div className="summary-secure">
