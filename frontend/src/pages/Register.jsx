@@ -6,7 +6,6 @@ import { saveToken } from './Login';
 const API = 'https://healthcare-plus-api.onrender.com';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// ✅ FIXED: Field is outside Register — prevents input focus loss on every keystroke
 const Field = ({ label, name, type = 'text', placeholder, half, value, onChange, error }) => (
   <div className={`auth-field-new ${half ? 'field-half' : ''}`}>
     <label>{label}</label>
@@ -24,6 +23,122 @@ const Field = ({ label, name, type = 'text', placeholder, half, value, onChange,
   </div>
 );
 
+// ── Success Modal ─────────────────────────────────────────────────────────────
+function SuccessModal({ name, onLogin, onHome }) {
+  return (
+    <>
+      {/* Backdrop */}
+      <div style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        backdropFilter: 'blur(4px)', zIndex: 999,
+        animation: 'fadeInBackdrop 0.3s ease forwards',
+      }} />
+
+      {/* Modal */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        zIndex: 1000,
+        animation: 'slideUpModal 0.45s cubic-bezier(0.34,1.56,0.64,1) forwards',
+      }}>
+        <div style={{
+          background: '#fff',
+          borderRadius: '28px 28px 0 0',
+          padding: '40px 32px 48px',
+          maxWidth: 480,
+          margin: '0 auto',
+          boxShadow: '0 -8px 40px rgba(0,0,0,0.15)',
+          textAlign: 'center',
+        }}>
+          {/* Checkmark circle */}
+          <div style={{
+            width: 80, height: 80, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 20px',
+            boxShadow: '0 8px 24px rgba(34,197,94,0.35)',
+            animation: 'popIn 0.5s 0.3s cubic-bezier(0.34,1.56,0.64,1) both',
+          }}>
+            <svg width="36" height="36" fill="none" stroke="#fff" strokeWidth="3"
+              strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
+
+          <h2 style={{
+            fontSize: '1.6rem', fontWeight: 700, color: '#111827',
+            margin: '0 0 8px',
+          }}>
+            Welcome, {name}! 🎉
+          </h2>
+          <p style={{
+            color: '#6b7280', fontSize: '0.95rem',
+            margin: '0 0 32px', lineHeight: 1.6,
+          }}>
+            Your account has been created successfully.<br />
+            What would you like to do next?
+          </p>
+
+          {/* Buttons */}
+          <div style={{ display: 'flex', gap: 12, flexDirection: 'column' }}>
+            <button onClick={onLogin} style={{
+              width: '100%', padding: '14px 24px',
+              background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+              color: '#fff', border: 'none', borderRadius: 14,
+              fontSize: '1rem', fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              boxShadow: '0 4px 16px rgba(37,99,235,0.35)',
+              transition: 'transform 0.15s, box-shadow 0.15s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(37,99,235,0.4)'; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 4px 16px rgba(37,99,235,0.35)'; }}
+            >
+              <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4" />
+                <polyline points="10 17 15 12 10 7" />
+                <line x1="15" y1="12" x2="3" y2="12" />
+              </svg>
+              Go to Login
+            </button>
+
+            <button onClick={onHome} style={{
+              width: '100%', padding: '14px 24px',
+              background: '#f3f4f6', color: '#374151',
+              border: '2px solid #e5e7eb', borderRadius: 14,
+              fontSize: '1rem', fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              transition: 'transform 0.15s, background 0.15s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#e5e7eb'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.transform = ''; }}
+            >
+              <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                <polyline points="9 22 9 12 15 12 15 22" />
+              </svg>
+              Go to Home
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes fadeInBackdrop {
+          from { opacity: 0; } to { opacity: 1; }
+        }
+        @keyframes slideUpModal {
+          from { transform: translateY(100%); opacity: 0; }
+          to   { transform: translateY(0);    opacity: 1; }
+        }
+        @keyframes popIn {
+          from { transform: scale(0); opacity: 0; }
+          to   { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
+    </>
+  );
+}
+
+// ── Main Register Component ───────────────────────────────────────────────────
 export default function Register() {
   const navigate = useNavigate();
 
@@ -31,11 +146,12 @@ export default function Register() {
     first_name: '', last_name: '', email: '',
     phone: '', dob: '', password: '', confirm_password: '',
   });
-  const [showPwd,  setShowPwd]  = useState(false);
-  const [showPwd2, setShowPwd2] = useState(false);
-  const [terms,    setTerms]    = useState(false);
-  const [errors,   setErrors]   = useState({});
-  const [loading,  setLoading]  = useState(false);
+  const [showPwd,   setShowPwd]   = useState(false);
+  const [showPwd2,  setShowPwd2]  = useState(false);
+  const [terms,     setTerms]     = useState(false);
+  const [errors,    setErrors]    = useState({});
+  const [loading,   setLoading]   = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
   const handleChange = e => {
     const { name, value } = e.target;
@@ -72,7 +188,7 @@ export default function Register() {
       const data = await res.json();
       if (!data.ok) { alert(data.error); return; }
       saveToken(data.token);
-      navigate('/');
+      setShowModal(true); // ← show success modal instead of navigating
     } catch {
       alert('Unable to connect to server. Please try again.');
     } finally {
@@ -94,6 +210,15 @@ export default function Register() {
 
   return (
     <div className="auth-page">
+      {/* Success Modal */}
+      {showModal && (
+        <SuccessModal
+          name={form.first_name}
+          onLogin={() => navigate('/login')}
+          onHome={() => navigate('/')}
+        />
+      )}
+
       <div className="auth-top-band auth-top-band--reg">
         <div className="auth-band-circles">
           <span className="auth-circle c1" /><span className="auth-circle c2" /><span className="auth-circle c3" />
@@ -167,8 +292,8 @@ export default function Register() {
             <input type="checkbox" checked={terms} onChange={e => setTerms(e.target.checked)} />
             <span className="remember-box" />
             <span className="terms-text">
-  I accept the <Link to="/terms">Terms &amp; Conditions</Link> and <Link to="/privacy">Privacy Policy</Link>
-</span>
+              I accept the <Link to="/terms">Terms &amp; Conditions</Link> and <Link to="/privacy">Privacy Policy</Link>
+            </span>
           </label>
 
           <button
