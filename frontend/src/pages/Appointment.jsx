@@ -1,16 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import '../styles/Appointment.css';
 import { getToken } from './Login';   // JWT helper
+import { supabase } from '../supabaseClient';
 
 const API = 'https://healthcare-plus-api.onrender.com';
-
-const DOCTORS = [
-  { name: 'Dr. Sarah Ahmed',  spec: 'General Medicine', fee: 500,  icon: 'fa-solid fa-user-nurse' },
-  { name: 'Dr. Kamal Rahman', spec: 'Cardiology',       fee: 800,  icon: 'fa-solid fa-heart-pulse' },
-  { name: 'Dr. Fatima Khan',  spec: 'Pediatrics',       fee: 600,  icon: 'fa-solid fa-baby' },
-  { name: 'Dr. Rahim Hassan', spec: 'Orthopedics',      fee: 700,  icon: 'fa-solid fa-bone' },
-  { name: 'Dr. Nadia Islam',  spec: 'Neurology',        fee: 900,  icon: 'fa-solid fa-brain' },
-];
 
 const PAYMENTS = [
   { id: 'bKash',             label: 'bKash',               cls: 'pay-bkash', icon: 'fa-solid fa-wallet',         needsNumber: true,  placeholder: 'Enter bKash number',  color: '#e2136e' },
@@ -23,6 +16,25 @@ export default function Appointment() {
     full_name: '', email: '', phone: '',
     preferred_date: '', preferred_time: '', gender: '', reason: '',
   });
+  const [doctors, setDoctors] = useState([]);
+
+  useEffect(() => {
+    supabase
+      .from('doctors')
+      .select('full_name, speciality, consultation_fee')
+      .then(({ data, error }) => {
+        if (!error && data) {
+          setDoctors(
+            data.map(d => ({
+              name: d.full_name,
+              spec: d.speciality,
+              fee:  d.consultation_fee,
+              icon: 'fa-solid fa-user-doctor',   // generic icon for all fetched doctors
+            }))
+          );
+        }
+      });
+  }, []);
   const [selDoc,        setSelDoc]        = useState(null);
   const [selPayment,    setSelPayment]    = useState(null);
   const [mobileNumber,  setMobileNumber]  = useState('');
@@ -167,7 +179,7 @@ export default function Appointment() {
             <i className="fa-solid fa-user-doctor"></i> Our Doctors <span style={{ color: '#ef4444' }}>*</span>
           </div>
           <div className="doctors-grid">
-            {DOCTORS.map(doc => (
+            {doctors.map(doc => (
               <div key={doc.name}
                 className={`doctor-card ${selDoc?.name === doc.name ? 'selected' : ''}`}
                 onClick={() => setSelDoc(doc)}>
