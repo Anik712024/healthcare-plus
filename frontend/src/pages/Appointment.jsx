@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import '../styles/Appointment.css';
 import { getToken } from './Login';   // JWT helper
-import { supabase } from '../supabaseClient';
+import { supabase } from '../lib/supabaseClient';
 
 const API = 'https://healthcare-plus-api.onrender.com';
 
