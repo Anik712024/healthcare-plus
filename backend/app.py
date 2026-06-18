@@ -457,7 +457,7 @@ def payment_success():
         except Exception:
             verified = False
 
-        new_status = "confirmed" if verified else "pending"
+        new_status = "paid" if verified else "pending"
 
         conn = get_db(); cur = conn.cursor()
         try:
@@ -526,7 +526,7 @@ def payment_ipn():
         conn = get_db(); cur = conn.cursor()
         try:
             cur.execute(
-                "UPDATE appointments SET payment_status='confirmed' WHERE tran_id=%s",
+                "UPDATE appointments SET payment_status='paid' WHERE tran_id=%s",
                 (tran_id,)
             )
             conn.commit()
