@@ -28,7 +28,7 @@ export default function Appointment() {
             data.map(d => ({
               name: d.full_name,
               spec: d.speciality,
-              fee:  d.consultation_fee,
+              fee:  Number(d.consultation_fee),
               icon: 'fa-solid fa-user-doctor',   // generic icon for all fetched doctors
             }))
           );
